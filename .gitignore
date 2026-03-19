@@ -1,0 +1,37 @@
+# Core ignores for a multi-project repo.
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Env files (never commit secrets; keep *.example)
+.env
+.env.*
+!**/.env.example
+!**/.env.example.*
+
+# Build outputs
+build/
+**/build/
+dist/
+**/dist/
+
+# Python venv / cache
+venv/
+**/venv/
+**/__pycache__/
+*.pyc
+
+# Local IDE/editor state
+.vs/
+.idea/
+.vscode/
+
+# Embedded git repositories (do not commit nested .git folders)
+**/.git/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+Desktop.ini
+
