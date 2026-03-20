@@ -1,7 +1,8 @@
-from fastapi import APIRouter
-from schemas.students import StudentCreate
+from fastapi import Depends, APIRouter
+from schemas.student import StudentCreate
+from core.deps import get_current_user
 
-router = APIRouter()
+router = APIRouter(prefix="/api")
 
 fake_db = []
 
@@ -13,15 +14,15 @@ def create_student(data: StudentCreate):
     return student
 
 @router.get("/students")
-def get_stidents():
+def get_students(user=Depends(get_current_user)):
     return fake_db
 
-@router.get("students/{id}")
-def get_students(student_id: int):
+@router.get("/students/{id}")
+def get_student(student_id: int):
     for student in fake_db:
-        if student[student_id] == id:
+        if student[id] == student_id:
             return student
-        return {"error": "ученик не найден"}
+    return {"error": "ученик не найден"}
     
 @router.put("/students/{student_id}")
 def update_student(student_id: int, data: StudentCreate):
@@ -29,7 +30,7 @@ def update_student(student_id: int, data: StudentCreate):
         if student["id"] == student_id:
             student.update(data.dict())
             return student
-    return {"error": "Student not found"}
+    return {"error": "ученик не найден"}
 
 @router.delete("/students/{student_id}")
 def delete_student(student_id: int):
@@ -37,4 +38,4 @@ def delete_student(student_id: int):
         if student["id"] == student_id:
             deleted = fake_db.pop(i)
             return deleted
-    return {"error": "Student not found"}
+    return {"error": "ученик не найден"}
