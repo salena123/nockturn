@@ -1,14 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException
-from core.deps import get_current_user
+from sqlalchemy.orm import Session
+from core.deps import get_current_user, get_db
 from schemas.user import UserCreate
 from core.security import hash_password
+from models.user import User
 
 router = APIRouter(prefix="/api")
 
-users_db = []
-
 @router.post("/users")
-def create_user(data: UserCreate, user=Depends(get_current_user)):
+def create_user(data: UserCreate, user=Depends(get_current_user), db: Session = Depends(get_db)):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Forbidden")
+    
+    print(f"Создан пользователь: {data.email}")
+    
+    existing_user = db.query(User).filter(User.email == data.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Такой пользователь уже существует")
+
+    new_user = User(
+        email=data.email,
+        password=hash_password(data.password),
+        role=data.role
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    print(f"User created: {new_user.email}")
+    return {"message": "Пользователь успешно создан", "пользователь": {"id": new_user.id, "email": new_user.email, "role": new_user.role}}
 
