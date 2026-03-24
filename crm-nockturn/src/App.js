@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './components/Login';
+import Students from './pages/Students';
+import Users from './pages/Users';
 
 function App() {
   const [token, setToken] = useState(null);
@@ -13,7 +16,7 @@ function App() {
 
   const handleLogin = (token) => {
     setToken(token);
-    console.log("TOKEN:", token);
+    localStorage.setItem('token', token);
   };
 
   const handleLogout = () => {
@@ -26,14 +29,30 @@ function App() {
   }
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Музыкальная студия Ноктюрн</h1>
-        <button onClick={handleLogout} className="logout-button">
-          Выйти
-        </button>
-      </header>
-    </div>
+    <Router>
+      <div className="App">
+        <header className="App-header">
+          <a href ="/">
+            <h1>Музыкальная студия Ноктюрн</h1>
+          </a>
+          <nav className="navigation">
+            <a href="/students">Студенты</a>
+            <a href="/users">Пользователи</a>
+          </nav>
+          <button onClick={handleLogout} className="logout-button">
+            Выйти
+          </button>
+        </header>
+        
+        <main className="main-content">
+          <Routes>
+            <Route path="/students" element={<Students />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/" element={<Navigate />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
   );
 }
 

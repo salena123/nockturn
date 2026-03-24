@@ -7,6 +7,14 @@ from models.user import User
 
 router = APIRouter(prefix="/api")
 
+@router.get("/users")
+def get_users(user=Depends(get_current_user), db: Session = Depends(get_db)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    users = db.query(User).all()
+    return [{"id": u.id, "email": u.email, "role": u.role} for u in users]
+
 @router.post("/users")
 def create_user(data: UserCreate, user=Depends(get_current_user), db: Session = Depends(get_db)):
     if user["role"] != "admin":
