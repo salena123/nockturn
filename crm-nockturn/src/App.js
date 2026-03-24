@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link} from 'react-router-dom';
 import Login from './components/Login';
 import Students from './pages/Students';
 import Users from './pages/Users';
@@ -32,12 +32,12 @@ function App() {
     <Router>
       <div className="App">
         <header className="App-header">
-          <a href ="/">
+          <Link to="/">
             <h1>Музыкальная студия Ноктюрн</h1>
-          </a>
-          <nav className="navigation">
-            <a href="/students">Студенты</a>
-            <a href="/users">Пользователи</a>
+          </Link>
+          <nav>
+            <Link to="/students">Студенты</Link>
+            <Link to="/users">Пользователи</Link>
           </nav>
           <button onClick={handleLogout} className="logout-button">
             Выйти
@@ -46,9 +46,15 @@ function App() {
         
         <main className="main-content">
           <Routes>
-            <Route path="/students" element={<Students />} />
-            <Route path="/users" element={<Users />} />
-            <Route path="/" element={<Navigate />} />
+            {!token ? (
+              <Route path="*" element={<Login onLogin={handleLogin} />} />
+            ) : (
+              <>
+                <Route path="/students" element={<Students />} />
+                <Route path="/users" element={<Users />} />
+                <Route path="/" element={<Navigate to="/" />} />
+              </>
+            )}
           </Routes>
         </main>
       </div>

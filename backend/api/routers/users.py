@@ -9,16 +9,16 @@ router = APIRouter(prefix="/api")
 
 @router.get("/users")
 def get_users(user=Depends(get_current_user), db: Session = Depends(get_db)):
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if user.role not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Недостаточно прав пользователя")
     
     users = db.query(User).all()
-    return [{"id": u.id, "email": u.email, "role": u.role} for u in users]
+    return [{"id": user.id, "email": user.email, "role": user.role} for user in users]
 
 @router.post("/users")
 def create_user(data: UserCreate, user=Depends(get_current_user), db: Session = Depends(get_db)):
-    if user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if user.role not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Недостаточно прав пользователя")
     
     print(f"Создан пользователь: {data.email}")
     
@@ -36,6 +36,6 @@ def create_user(data: UserCreate, user=Depends(get_current_user), db: Session = 
     db.commit()
     db.refresh(new_user)
     
-    print(f"User created: {new_user.email}")
+    print(f"Создан пользователь: {new_user.email}")
     return {"message": "Пользователь успешно создан", "пользователь": {"id": new_user.id, "email": new_user.email, "role": new_user.role}}
 
