@@ -23,9 +23,9 @@ def get_current_user(
 ):
     try:
         payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
+        login = payload.get("sub")
 
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(User).filter(User.login == login).first()
 
         if not user:
             raise HTTPException(status_code=401, detail="Пользователь не найден")

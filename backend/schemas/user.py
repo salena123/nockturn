@@ -1,10 +1,10 @@
 from pydantic import BaseModel
 
 class UserCreate(BaseModel):
-    email: str
+    login: str
     password: str
-    role: str  # admin, teacher или student
+    role: str  # admin, teacher или superadmin
 
 class UserLogin(BaseModel):
-    email: str
+    login: str
     password: str

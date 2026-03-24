@@ -36,7 +36,7 @@ function App() {
             <h1>Музыкальная студия Ноктюрн</h1>
           </Link>
           <nav>
-            <Link to="/students">Студенты</Link>
+            <Link to="/students">Ученики</Link>
             <Link to="/users">Пользователи</Link>
           </nav>
           <button onClick={handleLogout} className="logout-button">

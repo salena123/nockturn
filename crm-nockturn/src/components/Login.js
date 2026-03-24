@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 
 const Login = ({ onLogin }) => {
-  const [email, setEmail] = useState('');
+  const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -14,7 +14,7 @@ const Login = ({ onLogin }) => {
 
     try {
       const response = await axios.post('http://localhost:8000/api/auth/login', {
-        email,
+        login,
         password
       });
 
@@ -24,7 +24,8 @@ const Login = ({ onLogin }) => {
       onLogin(token);
 
     } catch (err) {
-      setError(err.response?.data?.error || 'Ошибка входа');
+      const errorMessage = err.response?.data?.detail || 'Ошибка входа';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -35,13 +36,14 @@ const Login = ({ onLogin }) => {
       <div className="login-card">
         <h2>Вход в CRM</h2>
         <form onSubmit={handleSubmit}>
+          {error && <div className="error-message">{error}</div>}
           <div className="form-group">
-            <label htmlFor="email">Логин:</label>
+            <label htmlFor="login">Логин:</label>
             <input
               type="text"
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="login"
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
               required
               placeholder="admin"
             />
@@ -57,7 +59,6 @@ const Login = ({ onLogin }) => {
               placeholder="1234"
             />
           </div>
-          {error && <div className="error-message">{error}</div>}
           <button type="submit" disabled={loading} className="login-button">
             {loading ? 'Вход...' : 'Войти'}
           </button>

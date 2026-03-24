@@ -4,7 +4,6 @@ from api.routers import students, users, auth
 from db.session import engine
 from models.user import Base
 
-# Создаем таблицы в базе данных
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
