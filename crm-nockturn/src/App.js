@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link} from 'react-rou
 import Login from './components/Login';
 import Students from './pages/Students';
 import Users from './pages/Users';
+import PublicSiteEditor from './pages/PublicSiteEditor';
 
 function App() {
   const [token, setToken] = useState(null);
@@ -38,6 +39,7 @@ function App() {
           <nav>
             <Link to="/students">Ученики</Link>
             <Link to="/users">Пользователи</Link>
+            <Link to="/editor">Редактор сайта</Link>
           </nav>
           <button onClick={handleLogout} className="logout-button">
             Выйти
@@ -52,7 +54,8 @@ function App() {
               <>
                 <Route path="/students" element={<Students />} />
                 <Route path="/users" element={<Users />} />
-                <Route path="/" element={<Navigate to="/" />} />
+                <Route path="/editor" element={<PublicSiteEditor />} />
+                {/* <Route path="/" element={<Navigate to="/" />} /> */}
               </>
             )}
           </Routes>

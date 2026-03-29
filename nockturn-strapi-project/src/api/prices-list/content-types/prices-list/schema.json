@@ -1,0 +1,45 @@
+{
+  "kind": "collectionType",
+  "collectionName": "prices_lists",
+  "info": {
+    "singularName": "prices-list",
+    "pluralName": "prices-lists",
+    "displayName": "PricesList"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "text"
+    },
+    "price": {
+      "type": "integer"
+    },
+    "is_group": {
+      "type": "boolean"
+    },
+    "count_of_students": {
+      "type": "integer"
+    },
+    "class": {
+      "type": "string"
+    },
+    "teachers_list": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::teachers-list.teachers-list",
+      "inversedBy": "prices_lists"
+    },
+    "index": {
+      "type": "integer"
+    },
+    "note": {
+      "type": "text"
+    }
+  }
+}

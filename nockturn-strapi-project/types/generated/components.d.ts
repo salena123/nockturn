@@ -1,18 +1,5 @@
 import type { Schema, Struct } from '@strapi/strapi';
 
-export interface SharedEvent extends Struct.ComponentSchema {
-  collectionName: 'components_shared_events';
-  info: {
-    displayName: 'Event';
-  };
-  attributes: {
-    attachments: Schema.Attribute.Media<'images' | 'files' | 'videos', true>;
-    description: Schema.Attribute.Text;
-    link: Schema.Attribute.String;
-    title: Schema.Attribute.String & Schema.Attribute.Required;
-  };
-}
-
 export interface SharedMedia extends Struct.ComponentSchema {
   collectionName: 'components_shared_media';
   info: {
@@ -78,7 +65,6 @@ export interface SharedSlider extends Struct.ComponentSchema {
 declare module '@strapi/strapi' {
   export module Public {
     export interface ComponentSchemas {
-      'shared.event': SharedEvent;
       'shared.media': SharedMedia;
       'shared.quote': SharedQuote;
       'shared.rich-text': SharedRichText;

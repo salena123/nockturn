@@ -611,10 +611,15 @@ export interface ApiEventListEventList extends Struct.CollectionTypeSchema {
     draftAndPublish: true;
   };
   attributes: {
+    attachments: Schema.Attribute.Media<
+      'images' | 'files' | 'videos' | 'audios',
+      true
+    >;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
-    event1: Schema.Attribute.Component<'shared.event', true>;
+    description: Schema.Attribute.Text;
+    link: Schema.Attribute.String;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
     localizations: Schema.Attribute.Relation<
       'oneToMany',
@@ -622,6 +627,7 @@ export interface ApiEventListEventList extends Struct.CollectionTypeSchema {
     > &
       Schema.Attribute.Private;
     publishedAt: Schema.Attribute.DateTime;
+    title: Schema.Attribute.String;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -654,6 +660,85 @@ export interface ApiGlobalGlobal extends Struct.SingleTypeSchema {
     publishedAt: Schema.Attribute.DateTime;
     siteDescription: Schema.Attribute.Text & Schema.Attribute.Required;
     siteName: Schema.Attribute.String & Schema.Attribute.Required;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
+export interface ApiPricesListPricesList extends Struct.CollectionTypeSchema {
+  collectionName: 'prices_lists';
+  info: {
+    displayName: 'PricesList';
+    pluralName: 'prices-lists';
+    singularName: 'prices-list';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  attributes: {
+    class: Schema.Attribute.String;
+    count_of_students: Schema.Attribute.Integer;
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    description: Schema.Attribute.Text;
+    index: Schema.Attribute.Integer;
+    is_group: Schema.Attribute.Boolean;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::prices-list.prices-list'
+    > &
+      Schema.Attribute.Private;
+    note: Schema.Attribute.Text;
+    price: Schema.Attribute.Integer;
+    publishedAt: Schema.Attribute.DateTime;
+    teachers_list: Schema.Attribute.Relation<
+      'manyToOne',
+      'api::teachers-list.teachers-list'
+    >;
+    title: Schema.Attribute.String;
+    updatedAt: Schema.Attribute.DateTime;
+    updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+  };
+}
+
+export interface ApiTeachersListTeachersList
+  extends Struct.CollectionTypeSchema {
+  collectionName: 'teachers_lists';
+  info: {
+    displayName: 'TeachersList';
+    pluralName: 'teachers-lists';
+    singularName: 'teachers-list';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  attributes: {
+    createdAt: Schema.Attribute.DateTime;
+    createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
+      Schema.Attribute.Private;
+    crm_id: Schema.Attribute.UID;
+    description: Schema.Attribute.Text;
+    full_description: Schema.Attribute.Blocks;
+    locale: Schema.Attribute.String & Schema.Attribute.Private;
+    localizations: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::teachers-list.teachers-list'
+    > &
+      Schema.Attribute.Private;
+    name: Schema.Attribute.String;
+    photo: Schema.Attribute.Media<
+      'images' | 'files' | 'videos' | 'audios',
+      true
+    >;
+    prices_lists: Schema.Attribute.Relation<
+      'oneToMany',
+      'api::prices-list.prices-list'
+    >;
+    publishedAt: Schema.Attribute.DateTime;
     updatedAt: Schema.Attribute.DateTime;
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -1178,6 +1263,8 @@ declare module '@strapi/strapi' {
       'api::category.category': ApiCategoryCategory;
       'api::event-list.event-list': ApiEventListEventList;
       'api::global.global': ApiGlobalGlobal;
+      'api::prices-list.prices-list': ApiPricesListPricesList;
+      'api::teachers-list.teachers-list': ApiTeachersListTeachersList;
       'plugin::content-releases.release': PluginContentReleasesRelease;
       'plugin::content-releases.release-action': PluginContentReleasesReleaseAction;
       'plugin::i18n.locale': PluginI18NLocale;

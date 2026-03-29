@@ -17,7 +17,7 @@ const config = {
     // 'pl',
     // 'pt-BR',
     // 'pt',
-    // 'ru',
+    'ru',
     // 'sk',
     // 'sv',
     // 'th',

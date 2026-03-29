@@ -1,0 +1,43 @@
+{
+  "kind": "collectionType",
+  "collectionName": "teachers_lists",
+  "info": {
+    "singularName": "teachers-list",
+    "pluralName": "teachers-lists",
+    "displayName": "TeachersList"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "name": {
+      "type": "string"
+    },
+    "crm_id": {
+      "type": "uid"
+    },
+    "description": {
+      "type": "text"
+    },
+    "full_description": {
+      "type": "blocks"
+    },
+    "photo": {
+      "type": "media",
+      "multiple": true,
+      "allowedTypes": [
+        "images",
+        "files",
+        "videos",
+        "audios"
+      ]
+    },
+    "prices_lists": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::prices-list.prices-list",
+      "mappedBy": "teachers_list"
+    }
+  }
+}

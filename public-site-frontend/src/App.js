@@ -1,5 +1,7 @@
 import './App.css';
 import EventsList from './components/EventsList';
+import PricesList from './components/PricesList';
+import TeachersList from './components/TeachersList';
 
 function App() {
   return (
@@ -8,6 +10,8 @@ function App() {
       <div className="eventsListContainer">
         <EventsList />
       </div>
+      <TeachersList />
+      <PricesList />
     </div>
   );
 }

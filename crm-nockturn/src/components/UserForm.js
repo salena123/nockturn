@@ -5,7 +5,7 @@ const UserForm = ({ user, currentUser, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
     login: '',
     password: '',
-    role: ''
+    role: 'teacher'
   });
   const [loading, setLoading] = useState(false);
 

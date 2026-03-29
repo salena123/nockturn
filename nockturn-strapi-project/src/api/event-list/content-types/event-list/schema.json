@@ -11,10 +11,24 @@
   },
   "pluginOptions": {},
   "attributes": {
-    "event1": {
-      "type": "component",
-      "component": "shared.event",
-      "repeatable": true
+    "title": {
+      "type": "string"
+    },
+    "link": {
+      "type": "string"
+    },
+    "description": {
+      "type": "text"
+    },
+    "attachments": {
+      "type": "media",
+      "multiple": true,
+      "allowedTypes": [
+        "images",
+        "files",
+        "videos",
+        "audios"
+      ]
     }
   }
 }
