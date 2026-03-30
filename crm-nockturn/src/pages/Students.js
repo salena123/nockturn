@@ -63,7 +63,6 @@ const Students = () => {
       setDeletingStudent(null);
     } catch (error) {
       console.error('Ошибка удаления ученика:', error);
-      alert('Ошибка удаления ученика');
     }
   };
 
@@ -78,7 +77,7 @@ const Students = () => {
     <div>
       <h2>Ученики</h2>
       
-      <button onClick={handleAddStudent} style={{ marginBottom: '20px' }}>
+      <button onClick={handleAddStudent} className="btn btn-primary mb-20">
         Добавить ученика
       </button>
 

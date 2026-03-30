@@ -8,117 +8,114 @@ const Users = () => {
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingUser, setDeletingUser] = useState(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) return null
-
-        const responseMe = await api.get('/api/me', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setCurrentUser(responseMe.data);
-
-        const response = await api.get('/api/users');
-        setUsers(response.data);
-      } catch (error) {
-        console.error('Ошибка загрузки пользователей:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  const canAddUser = () => {
-    return currentUser && (currentUser.role === 'admin' || currentUser.role === 'superadmin');
-  };
-
-  const handleAddUser = () => {
-    setEditingUser(null);
-    setShowForm(true);
-  };
-
-  const handleEditUser = (user) => {
-    setEditingUser(user);
-    setShowForm(true);
-  };
-
-  const handleDeleteUser = (user) => {
-    setDeletingUser(user);
-    setShowDeleteConfirm(true);
-  };
-
-  const handleSaveUser = () => {
-    setShowForm(false);
-    setEditingUser(null);
-    api.get('/api/users')
-      .then(response => setUsers(response.data))
-      .catch(error => console.error('Ошибка перезагрузки пользователей:', error));
-  };
-
-  const handleCancelUser = () => {
-    setShowForm(false);
-    setEditingUser(null);
-  };
-
-  const handleConfirmDelete = async () => {
+  const loadUsers = async () => {
     try {
-      await api.delete(`/api/users/${deletingUser.id}`);
-      setUsers(users.filter(user => user.id !== deletingUser.id));
-      setShowDeleteConfirm(false);
-      setDeletingUser(null);
+      const res = await api.get('/api/users');
+      setUsers(res.data);
     } catch (error) {
-      console.error('Ошибка удаления пользователя:', error);
-      alert('Ошибка удаления пользователя');
+      console.error('Ошибка загрузки пользователей:', error);
     }
   };
 
-  const handleCancelDelete = () => {
-    setShowDeleteConfirm(false);
-    setDeletingUser(null);
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const res = await api.get('/api/me');
+        setCurrentUser(res.data);
+      } catch (error) {
+        console.error('Ошибка инициализации:', error);
+      }
+    };
+
+    init();
+  }, []);
+
+  useEffect(() => {
+  if (!currentUser) return;
+
+  // if (currentUser.role === 'teacher') return;
+
+  const fetchUsers = async () => {
+    try {
+      const response = await api.get('/api/users');
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Ошибка загрузки учеников:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  fetchUsers();
+}, [currentUser]);
+
+  const canAddUser =
+    currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+
+  const openCreate = () => setEditingUser({});
+  const openEdit = (user) => setEditingUser(user);
+
+  const closeForm = () => setEditingUser(null);
+
+  const handleSave = async () => {
+    closeForm();
+    await loadUsers();
+  };
+
+  const handleDelete = (user) => setDeletingUser(user);
+
+  const confirmDelete = async () => {
+    try {
+      await api.delete(`/api/users/${deletingUser.id}`);
+      setUsers(users.filter(u => u.id !== deletingUser.id));
+      setDeletingUser(null);
+    } catch (error) {
+      console.error('Ошибка удаления:', error);
+    }
+  };
+
+  const cancelDelete = () => setDeletingUser(null);
+
   if (loading) return <div>Загрузка...</div>;
+  if (currentUser?.role === 'teacher') {
+  return <h3>Преподавателям недоступен список пользователей</h3>;
+}
 
   return (
     <div>
       <h2>Пользователи</h2>
-      
-      {canAddUser() && (
-        <button onClick={handleAddUser} style={{ marginBottom: '20px' }}>
+
+      {canAddUser && (
+        <button onClick={openCreate} className="btn btn-primary mb-20">
           Добавить пользователя
         </button>
       )}
 
-      {showForm && (
+      {editingUser !== null && (
         <UserForm
           user={editingUser}
           currentUser={currentUser}
-          onSave={handleSaveUser}
-          onCancel={handleCancelUser}
+          onSave={handleSave}
+          onCancel={closeForm}
         />
       )}
 
       <UserTable
         users={users}
         currentUser={currentUser}
-        onEdit={handleEditUser}
-        onDelete={handleDeleteUser}
+        onEdit={openEdit}
+        onDelete={handleDelete}
       />
 
-      {showDeleteConfirm && (
+      {deletingUser && (
         <DeleteConfirm
           item={deletingUser}
           itemType="user"
-          onConfirm={handleConfirmDelete}
-          onCancel={handleCancelDelete}
+          onConfirm={confirmDelete}
+          onCancel={cancelDelete}
         />
       )}
     </div>

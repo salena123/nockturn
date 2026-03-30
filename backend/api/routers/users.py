@@ -58,35 +58,44 @@ def create_user(data: UserCreate, user=Depends(get_current_user), db: Session = 
     return {"message": "Пользователь успешно создан", "пользователь": {"id": new_user.id, "login": new_user.login, "role": new_user.role}}
 
 @router.put("/users/{user_id}")
+@router.put("/users/{user_id}")
 def update_user(user_id: int, data: UserUpdate, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
-    if current_user.role == "superadmin":
-        pass
-    elif current_user.role == "admin":
-        target_user = db.query(User).filter(User.id == user_id).first()
-        if not target_user:
-            raise HTTPException(status_code=404, detail="Пользователь не найден")
-        if target_user.role not in ["teacher", "admin"] or target_user.id != current_user.id:
-            raise HTTPException(status_code=403, detail="Недостаточно прав пользователя")
-    elif current_user.id == user_id:
-        pass
-    else:
-        raise HTTPException(status_code=403, detail="Недостаточно прав пользователя")
-    
+
     target_user = db.query(User).filter(User.id == user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    
+
+    if current_user.role == "superadmin":
+        pass
+
+    elif current_user.role == "admin":
+        if target_user.role == "superadmin":
+            raise HTTPException(status_code=403, detail="Недостаточно прав пользователя")
+
+    elif current_user.id == user_id:
+        pass
+
+    else:
+        raise HTTPException(status_code=403, detail="Недостаточно прав пользователя")
+
     if data.login is not None:
         target_user.login = data.login
     if data.password is not None:
         target_user.password = hash_password(data.password)
     if data.role is not None:
         target_user.role = data.role
-    
+
     db.commit()
     db.refresh(target_user)
-    
-    return {"message": "Пользователь успешно обновлен", "пользователь": {"id": target_user.id, "login": target_user.login, "role": target_user.role}}
+
+    return {
+        "message": "Пользователь успешно обновлен",
+        "пользователь": {
+            "id": target_user.id,
+            "login": target_user.login,
+            "role": target_user.role
+        }
+    }
 
 @router.delete("/users/{user_id}")
 def delete_user(user_id: int, current_user=Depends(get_current_user), db: Session = Depends(get_db)):

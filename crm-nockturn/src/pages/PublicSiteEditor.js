@@ -1,6 +1,30 @@
 import React from "react";
+import api from '../api';
+import { useEffect, useState } from "react";
+
 
 const PublicSiteEditor = () => {
+    const [currentUser, setCurrentUser] = useState(null);
+
+    useEffect(() => {
+    const init = async () => {
+      try {
+        const res = await api.get('/api/me');
+        setCurrentUser(res.data);
+      } catch (error) {
+        console.error('Ошибка инициализации:', error);
+      }
+    };
+
+    init();
+    }, []);
+  
+    if (!currentUser) {
+      return <div>Загрузка...</div>;
+    }
+    if (currentUser.role !== 'superadmin') {
+      return <div>У вас нет доступа к этому разделу</div>;
+    }
 
     return (
         <div>

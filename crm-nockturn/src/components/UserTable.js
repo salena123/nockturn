@@ -66,12 +66,12 @@ const UserTable = ({ users, currentUser, onEdit, onDelete }) => {
               {console.log(user.role)}
               {
               canEditUser(user) && (
-                <button onClick={() => onEdit(user)} style={{ marginRight: '8px' }}>
+                <button onClick={() => onEdit(user)} className="btn btn-secondary mr-8">
                   Редактировать
                 </button>
               )}
               {canDeleteUser(user) && (
-                <button onClick={() => onDelete(user)}>
+                <button onClick={() => onDelete(user)} className="btn btn-danger mr-8">
                   Удалить
                 </button>
               )}

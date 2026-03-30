@@ -10,13 +10,19 @@ const UserForm = ({ user, currentUser, onSave, onCancel }) => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user) {
-      setFormData({
-        login: user.login,
-        password: '',
-        role: user.role
-      });
-    }
+  if (user?.id) {
+    setFormData({
+      login: user.login,
+      password: '',
+      role: user.role
+    });
+  } else {
+    setFormData({
+      login: '',
+      password: '',
+      role: 'teacher'
+    });
+  }
   }, [user]);
 
   const handleChange = (e) => {
@@ -32,31 +38,29 @@ const UserForm = ({ user, currentUser, onSave, onCancel }) => {
     setLoading(true);
 
     try {
-      if (user) {
+      if (user?.id) {
         const updateData = {};
-        
+
         if (canEditLogin()) {
           updateData.login = formData.login;
         }
-        
+
         if (canEditRole()) {
           updateData.role = formData.role;
         }
-        
-        if (user.id !== currentUser.id && formData.password) {
+
+        if (formData.password) {
           updateData.password = formData.password;
         }
-        
-        if (user.id === currentUser.id && formData.password) {
-          updateData.password = formData.password;
-        }
-        
+
         await api.put(`/api/users/${user.id}`, updateData);
+
       } else {
         await api.post('/api/users', formData);
       }
-      
+
       onSave();
+
     } catch (error) {
       console.error('Ошибка сохранения пользователя:', error);
     } finally {
@@ -84,11 +88,11 @@ const UserForm = ({ user, currentUser, onSave, onCancel }) => {
   }
 
   return (
-    <div style={{ padding: '20px', border: '1px solid #ccc', borderRadius: '4px' }}>
+    <div className="form-container">
       <h3>{user ? 'Редактировать пользователя' : 'Добавить пользователя'}</h3>
       
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '15px' }}>
+        <div className="form-group">
           <label>
             Логин:
             <input
@@ -97,13 +101,13 @@ const UserForm = ({ user, currentUser, onSave, onCancel }) => {
               value={formData.login}
               onChange={handleChange}
               disabled={!canEditLogin()}
-              style={{ marginLeft: '10px', padding: '5px', backgroundColor: canEditLogin() ? 'white' : '#f5f5f5' }}
+              className={canEditLogin() ? 'form-input' : 'form-input disabled'}
             />
-            {!canEditLogin() && <small style={{ marginLeft: '10px', color: '#666' }}>Нельзя изменить свой логин</small>}
+            {!canEditLogin() && <small className="form-help-text">Нельзя изменить свой логин</small>}
           </label>
         </div>
 
-        <div style={{ marginBottom: '15px' }}>
+        <div className="form-group">
           <label>
             Пароль:
             <input
@@ -112,20 +116,20 @@ const UserForm = ({ user, currentUser, onSave, onCancel }) => {
               value={formData.password}
               onChange={handleChange}
               placeholder={user ? 'Оставьте пустым если не меняете' : ''}
-              style={{ marginLeft: '10px', padding: '5px' }}
+              className="form-input"
             />
           </label>
         </div>
 
         {canEditRole() && (
-          <div style={{ marginBottom: '15px' }}>
+          <div className="form-group">
             <label>
               Роль:
               <select
                 name="role"
                 value={formData.role}
                 onChange={handleChange}
-                style={{ marginLeft: '10px', padding: '5px' }}
+                className="form-input"
               >
                 {
                   canEditAdminRole().map(role => (
@@ -138,10 +142,10 @@ const UserForm = ({ user, currentUser, onSave, onCancel }) => {
         )}
 
         <div>
-          <button type="submit" disabled={loading} style={{ marginRight: '10px' }}>
+          <button type="submit" disabled={loading} className="btn btn-primary mr-10">
             {loading ? 'Сохранение...' : 'Сохранить'}
           </button>
-          <button type="button" onClick={onCancel}>
+          <button type="button" onClick={onCancel} className="btn btn-secondary">
             Отмена
           </button>
         </div>

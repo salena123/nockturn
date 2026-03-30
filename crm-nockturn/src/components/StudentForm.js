@@ -50,18 +50,17 @@ const StudentForm = ({ student, onSave, onCancel }) => {
       onSave();
     } catch (error) {
       console.error('Ошибка сохранения ученика:', error);
-      alert('Ошибка сохранения ученика');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ padding: '20px', border: '1px solid #ccc', borderRadius: '4px' }}>
+    <div className="form-container">
       <h3>{student ? 'Редактировать ученика' : 'Добавить ученика'}</h3>
       
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '15px' }}>
+        <div className="form-group">
           <label>
             ФИО:
             <input
@@ -70,12 +69,12 @@ const StudentForm = ({ student, onSave, onCancel }) => {
               value={formData.fio}
               onChange={handleChange}
               required
-              style={{ marginLeft: '10px', padding: '5px' }}
+              className="form-input"
             />
           </label>
         </div>
 
-        <div style={{ marginBottom: '15px' }}>
+        <div className="form-group">
           <label>
             Телефон:
             <input
@@ -84,12 +83,12 @@ const StudentForm = ({ student, onSave, onCancel }) => {
               value={formData.phone}
               onChange={handleChange}
               required
-              style={{ marginLeft: '10px', padding: '5px' }}
+              className="form-input"
             />
           </label>
         </div>
 
-        <div style={{ marginBottom: '15px' }}>
+        <div className="form-group">
           <label>
             Email:
             <input
@@ -98,26 +97,26 @@ const StudentForm = ({ student, onSave, onCancel }) => {
               value={formData.email}
               onChange={handleChange}
               required
-              style={{ marginLeft: '10px', padding: '5px' }}
+              className="form-input"
             />
           </label>
         </div>
 
-        <div style={{ marginBottom: '15px' }}>
+        <div className="form-group">
           <label>
             <input
               type="checkbox"
               name="has_parent"
               checked={formData.has_parent}
               onChange={handleChange}
-              style={{ marginRight: '10px' }}
+              className="form-checkbox"
             />
             Есть родитель
           </label>
         </div>
 
         {formData.has_parent && (
-          <div style={{ marginBottom: '15px' }}>
+          <div className="form-group">
             <label>
               ID родителя:
               <input
@@ -125,17 +124,17 @@ const StudentForm = ({ student, onSave, onCancel }) => {
                 name="parent_id"
                 value={formData.parent_id}
                 onChange={handleChange}
-                style={{ marginLeft: '10px', padding: '5px' }}
+                className="form-input"
               />
             </label>
           </div>
         )}
 
         <div>
-          <button type="submit" disabled={loading} style={{ marginRight: '10px' }}>
+          <button type="submit" disabled={loading} className="btn btn-primary mr-10">
             {loading ? 'Сохранение...' : 'Сохранить'}
           </button>
-          <button type="button" onClick={onCancel}>
+          <button type="button" onClick={onCancel} className="btn btn-secondary">
             Отмена
           </button>
         </div>

@@ -4,16 +4,32 @@ import Login from './components/Login';
 import Students from './pages/Students';
 import Users from './pages/Users';
 import PublicSiteEditor from './pages/PublicSiteEditor';
+import './App.css'; 
+import api from './api';
 
 function App() {
-  const [token, setToken] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [token, setToken] = useState(() => {
+  return localStorage.getItem('token');
+});
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('token');
-    if (savedToken) {
-      setToken(savedToken);
-    }
-  }, []);
+    const fetchUser = async () => {
+      if (!token) return;
+
+      try {
+        const res = await api.get('/api/me');
+        setCurrentUser(res.data);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    fetchUser();
+  }, [token]);
+
+  const isTeacher = currentUser?.role === 'teacher';
+  const isSuperAdmin = currentUser?.role === 'superadmin';
 
   const handleLogin = (token) => {
     setToken(token);
@@ -29,6 +45,10 @@ function App() {
     return <Login onLogin={handleLogin} />;
   }
 
+  if (!currentUser) {
+  return <div>Загрузка...</div>;
+  }
+
   return (
     <Router>
       <div className="App">
@@ -36,10 +56,10 @@ function App() {
           <Link to="/">
             <h1>Музыкальная студия Ноктюрн</h1>
           </Link>
-          <nav>
+          <nav className="top-navigation"> 
             <Link to="/students">Ученики</Link>
-            <Link to="/users">Пользователи</Link>
-            <Link to="/editor">Редактор сайта</Link>
+            {!isTeacher && <Link to="/users">Пользователи</Link>}
+            {isSuperAdmin && <Link to="/editor">Редактор сайта</Link>}
           </nav>
           <button onClick={handleLogout} className="logout-button">
             Выйти

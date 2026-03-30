@@ -40,10 +40,10 @@ const StudentTable = ({ students, onEdit, onDelete }) => {
               </td>
             ))}
             <td>
-              <button onClick={() => onEdit(student)} style={{ marginRight: '8px' }}>
+              <button onClick={() => onEdit(student)} className="btn btn-secondary mr-8">
                 Редактировать
               </button>
-              <button onClick={() => onDelete(student)}>
+              <button onClick={() => onDelete(student)} className="btn btn-danger mr-8">
                 Удалить
               </button>
             </td>
