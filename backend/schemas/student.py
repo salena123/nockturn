@@ -5,7 +5,7 @@ class StudentCreate(BaseModel):
     fio: str
     phone: str
     email: str
-    has_parent: bool
+    has_parent: Optional[bool] = None
     parent_id: Optional[int] = None
 
 class StudentResponse(StudentCreate):

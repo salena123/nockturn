@@ -1,6 +1,7 @@
-import { Outlet, Link } from "react-router-dom";
+import React from 'react';
+import { Link } from 'react-router-dom';
 
-const Layout = ({ currentUser, onLogout }) => {
+function Layout({ children, onLogout, isTeacher, isSuperAdmin }) {
   return (
     <div className="App">
       <header className="App-header">
@@ -10,24 +11,20 @@ const Layout = ({ currentUser, onLogout }) => {
 
         <nav className="top-navigation">
           <Link to="/students">Ученики</Link>
-
-          {currentUser?.role !== "teacher" && (
-            <Link to="/users">Пользователи</Link>
-          )}
-
-          {currentUser?.role === "superadmin" && (
-            <Link to="/editor">Редактор сайта</Link>
-          )}
+          {!isTeacher && <Link to="/users">Пользователи</Link>}
+          {isSuperAdmin && <Link to="/editor">Редактор сайта</Link>}
         </nav>
 
-        <button onClick={onLogout}>Выйти</button>
+        <button onClick={onLogout} className="logout-button">
+          Выйти
+        </button>
       </header>
 
       <main className="main-content">
-        <Outlet />
+        {children}
       </main>
     </div>
   );
-};
+}
 
 export default Layout;

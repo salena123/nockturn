@@ -4,13 +4,14 @@ from schemas.student import StudentCreate, StudentResponse
 from core.deps import get_current_user, get_db
 from models.student import Student
 from pydantic import BaseModel
+from typing import Optional
 
 class StudentUpdate(BaseModel):
     fio: str = None
     phone: str = None
     email: str = None
-    has_parent: bool = None
-    parent_id: int = None
+    has_parent: Optional[bool] = None
+    parent_id: Optional[int] = None
 
 router = APIRouter(prefix="/api")
 
@@ -58,7 +59,14 @@ def update_student(student_id: int, data: StudentUpdate, user=Depends(get_curren
         student.has_parent = data.has_parent
     if data.parent_id is not None:
         student.parent_id = data.parent_id
-    
+    if data.has_parent is not None:
+        student.has_parent = data.has_parent
+    if data.has_parent is False:
+        student.parent_id = None
+    if data.parent_id is not None and student.has_parent:
+        student.parent_id = data.parent_id
+
+
     db.commit()
     db.refresh(student)
     return student

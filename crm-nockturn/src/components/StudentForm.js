@@ -9,22 +9,32 @@ const StudentForm = ({ student, onSave, onCancel }) => {
     has_parent: false,
     parent_id: ''
   });
+
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (student) {
+    if (student?.id) {
       setFormData({
-        fio: student.fio,
-        phone: student.phone,
-        email: student.email,
+        fio: student.fio || '',
+        phone: student.phone || '',
+        email: student.email || '',
         has_parent: student.has_parent || false,
-        parent_id: student.parent_id || ''
+        parent_id: student.parent_id ? String(student.parent_id) : ''
+      });
+    } else {
+      setFormData({
+        fio: '',
+        phone: '',
+        email: '',
+        has_parent: false,
+        parent_id: ''
       });
     }
   }, [student]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
@@ -37,16 +47,22 @@ const StudentForm = ({ student, onSave, onCancel }) => {
 
     try {
       const submitData = {
-        ...formData,
-        parent_id: formData.has_parent && formData.parent_id ? parseInt(formData.parent_id) : null
+        fio: formData.fio,
+        phone: formData.phone,
+        email: formData.email,
+        has_parent: formData.has_parent,
+        parent_id:
+          formData.has_parent && formData.parent_id
+            ? Number(formData.parent_id)
+            : null
       };
 
-      if (student) {
+      if (student?.id) {
         await api.put(`/api/students/${student.id}`, submitData);
       } else {
         await api.post('/api/students', submitData);
       }
-      
+
       onSave();
     } catch (error) {
       console.error('Ошибка сохранения ученика:', error);
@@ -57,8 +73,10 @@ const StudentForm = ({ student, onSave, onCancel }) => {
 
   return (
     <div className="form-container">
-      <h3>{student ? 'Редактировать ученика' : 'Добавить ученика'}</h3>
-      
+      <h3>
+        {student?.id ? 'Редактировать ученика' : 'Добавить ученика'}
+      </h3>
+
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label>
@@ -92,7 +110,7 @@ const StudentForm = ({ student, onSave, onCancel }) => {
           <label>
             Email:
             <input
-              type="email"
+              type="text"
               name="email"
               value={formData.email}
               onChange={handleChange}
@@ -131,10 +149,19 @@ const StudentForm = ({ student, onSave, onCancel }) => {
         )}
 
         <div>
-          <button type="submit" disabled={loading} className="btn btn-primary mr-10">
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn btn-primary mr-10"
+          >
             {loading ? 'Сохранение...' : 'Сохранить'}
           </button>
-          <button type="button" onClick={onCancel} className="btn btn-secondary">
+
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn btn-secondary"
+          >
             Отмена
           </button>
         </div>
