@@ -3,7 +3,7 @@ import React from 'react';
 const DeleteConfirm = ({ item, itemType, onConfirm, onCancel }) => {
   const getItemName = () => {
     if (itemType === 'user') {
-      return item.email;
+      return item.login;
     } else if (itemType === 'student') {
       return item.fio;
     }

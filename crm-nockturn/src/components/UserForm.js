@@ -89,8 +89,7 @@ const UserForm = ({ user, currentUser, onSave, onCancel }) => {
 
   return (
     <div className="form-container">
-      <h3>{user ? 'Редактировать пользователя' : 'Добавить пользователя'}</h3>
-      
+      <h3>{user?.id ? 'Редактировать пользователя' : 'Добавить пользователя'}</h3>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label>

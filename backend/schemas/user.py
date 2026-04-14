@@ -3,7 +3,8 @@ from pydantic import BaseModel
 class UserCreate(BaseModel):
     login: str
     password: str
-    role: str  # admin, teacher или superadmin
+    role_id: int
+    is_active: bool
 
 class UserLogin(BaseModel):
     login: str

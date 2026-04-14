@@ -17,8 +17,11 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
     if not verify_password(data.password, user.password):
         raise HTTPException(status_code=401, detail="Неверный пароль")
     
+    if not user.role:
+        raise HTTPException(status_code=500, detail="У пользователя нет роли")
+    
     token = create_access_token({
         "sub": user.login,
-        "role": user.role
+        "role": user.role.name
     })
     return {"access_token": token, "token_type": "bearer"}

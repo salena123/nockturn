@@ -63,7 +63,6 @@ const UserTable = ({ users, currentUser, onEdit, onDelete }) => {
               <td key={header.key}>{user[header.key]}</td>
             ))}
             <td>
-              {console.log(user.role)}
               {
               canEditUser(user) && (
                 <button onClick={() => onEdit(user)} className="btn btn-secondary mr-8">
