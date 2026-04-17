@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from core.deps import get_current_user, get_db
 from schemas.user import UserCreate
 from core.security import hash_password
@@ -34,8 +34,8 @@ def get_users(user=Depends(get_current_user), db: Session = Depends(get_db)):
     if user.role.name not in ["admin", "superadmin"]:
         raise HTTPException(status_code=403, detail="Недостаточно прав пользователя")
     
-    users = db.query(User).all()
-    return [{"id": user.id, "login": user.login, "role": user.role.name} for user in users]
+    users = db.query(User).options(joinedload(User.role)).all()
+    return [{"id": u.id, "login": u.login, "role": u.role.name} for u in users]
 
 @router.post("/users")
 def create_user(data: UserCreate, user=Depends(get_current_user), db: Session = Depends(get_db)):

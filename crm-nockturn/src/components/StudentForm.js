@@ -7,7 +7,15 @@ const StudentForm = ({ student, onSave, onCancel }) => {
     phone: '',
     email: '',
     has_parent: false,
-    parent_id: ''
+    parent_name: '',
+    parent_phone: '',
+    parent_telegram_id: '',
+    address: '',
+    level: '',
+    status: '',
+    comment: '',
+    first_contact_date: '',
+    birth_date: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -19,7 +27,15 @@ const StudentForm = ({ student, onSave, onCancel }) => {
         phone: student.phone || '',
         email: student.email || '',
         has_parent: student.has_parent || false,
-        parent_id: student.parent_id ? String(student.parent_id) : ''
+        parent_name: student.parent_name || '',
+        parent_phone: student.parent?.phone || '',
+        parent_telegram_id: student.parent?.telegram_id ? String(student.parent.telegram_id) : '',
+        address: student.address || '',
+        level: student.level || '',
+        status: student.status || '',
+        comment: student.comment || '',
+        first_contact_date: student.first_contact_date ? new Date(student.first_contact_date).toISOString().split('T')[0] : '',
+        birth_date: student.birth_date ? new Date(student.birth_date).toISOString().split('T')[0] : ''
       });
     } else {
       setFormData({
@@ -27,7 +43,15 @@ const StudentForm = ({ student, onSave, onCancel }) => {
         phone: '',
         email: '',
         has_parent: false,
-        parent_id: ''
+        parent_name: '',
+        parent_phone: '',
+        parent_telegram_id: '',
+        address: '',
+        level: '',
+        status: '',
+        comment: '',
+        first_contact_date: '',
+        birth_date: ''
       });
     }
   }, [student]);
@@ -51,10 +75,15 @@ const StudentForm = ({ student, onSave, onCancel }) => {
         phone: formData.phone,
         email: formData.email,
         has_parent: formData.has_parent,
-        parent_id:
-          formData.has_parent && formData.parent_id
-            ? Number(formData.parent_id)
-            : null
+        parent_name: formData.has_parent ? formData.parent_name : null,
+        parent_phone: formData.has_parent ? formData.parent_phone : null,
+        parent_telegram_id: formData.has_parent && formData.parent_telegram_id ? Number(formData.parent_telegram_id) : null,
+        address: formData.address || null,
+        level: formData.level || null,
+        status: formData.status || null,
+        comment: formData.comment || null,
+        first_contact_date: formData.first_contact_date || null,
+        birth_date: formData.birth_date || null
       };
 
       if (student?.id) {
@@ -100,7 +129,6 @@ const StudentForm = ({ student, onSave, onCancel }) => {
               name="phone"
               value={formData.phone}
               onChange={handleChange}
-              required
               className="form-input"
             />
           </label>
@@ -110,12 +138,95 @@ const StudentForm = ({ student, onSave, onCancel }) => {
           <label>
             Email:
             <input
-              type="text"
+              type="email"
               name="email"
               value={formData.email}
               onChange={handleChange}
-              required
               className="form-input"
+            />
+          </label>
+        </div>
+
+        <div className="form-group">
+          <label>
+            Адрес:
+            <textarea
+              name="address"
+              value={formData.address}
+              onChange={handleChange}
+              className="form-input"
+              rows="3"
+            />
+          </label>
+        </div>
+
+        <div className="form-group">
+          <label>
+            Уровень:
+            <input
+              type="text"
+              name="level"
+              value={formData.level}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </label>
+        </div>
+
+        <div className="form-group">
+          <label>
+            Статус:
+            <select
+              name="status"
+              value={formData.status}
+              onChange={handleChange}
+              className="form-input"
+            >
+              <option value="">Выберите статус</option>
+              <option value="новый">Новый</option>
+              <option value="активный">Активный</option>
+              <option value="приостановлен">Приостановлен</option>
+              <option value="окончил">Окончил</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="form-group">
+          <label>
+            Дата первого контакта:
+            <input
+              type="date"
+              name="first_contact_date"
+              value={formData.first_contact_date}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </label>
+        </div>
+
+        <div className="form-group">
+          <label>
+            Дата рождения:
+            <input
+              type="date"
+              name="birth_date"
+              value={formData.birth_date}
+              onChange={handleChange}
+              className="form-input"
+            />
+          </label>
+        </div>
+
+        <div className="form-group">
+          <label>
+            Комментарий:
+            <textarea
+              name="comment"
+              value={formData.comment}
+              onChange={handleChange}
+              className="form-input"
+              rows="3"
+              placeholder="Дополнительная информация об ученике"
             />
           </label>
         </div>
@@ -134,18 +245,48 @@ const StudentForm = ({ student, onSave, onCancel }) => {
         </div>
 
         {formData.has_parent && (
-          <div className="form-group">
-            <label>
-              ID родителя:
-              <input
-                type="number"
-                name="parent_id"
-                value={formData.parent_id}
-                onChange={handleChange}
-                className="form-input"
-              />
-            </label>
-          </div>
+          <>
+            <div className="form-group">
+              <label>
+                Имя родителя:
+                <input
+                  type="text"
+                  name="parent_name"
+                  value={formData.parent_name}
+                  onChange={handleChange}
+                  required={formData.has_parent}
+                  className="form-input"
+                />
+              </label>
+            </div>
+
+            <div className="form-group">
+              <label>
+                Телефон родителя:
+                <input
+                  type="tel"
+                  name="parent_phone"
+                  value={formData.parent_phone}
+                  onChange={handleChange}
+                  className="form-input"
+                />
+              </label>
+            </div>
+
+            <div className="form-group">
+              <label>
+                Telegram ID родителя:
+                <input
+                  type="number"
+                  name="parent_telegram_id"
+                  value={formData.parent_telegram_id}
+                  onChange={handleChange}
+                  className="form-input"
+                  placeholder="ID пользователя в Telegram (необязательно)"
+                />
+              </label>
+            </div>
+          </>
         )}
 
         <div>

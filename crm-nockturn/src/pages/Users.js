@@ -36,8 +36,6 @@ const Users = () => {
   useEffect(() => {
   if (!currentUser) return;
 
-  // if (currentUser.role === 'teacher') return;
-
   const fetchUsers = async () => {
     try {
       const response = await api.get('/api/users');

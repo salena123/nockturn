@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, Date, DateTime, ForeignKey
 from datetime import datetime
+from sqlalchemy.orm import relationship
 from .base import Base
 
 class Student(Base):
@@ -11,6 +12,7 @@ class Student(Base):
     email = Column(String)
     has_parent = Column(Boolean, default=False)
     parent_id = Column(Integer, ForeignKey("parents.id"))
+    parent = relationship("Parent", backref="students")
     parent_name = Column(String)
     address = Column(Text)
     level = Column(String)

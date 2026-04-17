@@ -10,13 +10,22 @@ const StudentTable = ({ students, onEdit, onDelete }) => {
       phone: 'Телефон',
       email: 'Email',
       has_parent: 'Есть родитель',
-      parent_id: 'ID родителя'
+      parent_name: 'Имя родителя',
+      parent_telegram_id: 'Телеграм ID родителя',
+      address: 'Адрес',
+      level: 'Уровень',
+      status: 'Статус',
+      comment: 'Комментарий',
+      first_contact_date: 'Дата первого контакта',
+      birth_date: 'Дата рождения'
     };
     
-    return Object.keys(students[0]).map(key => ({
-      key,
-      label: fieldTranslations[key] || key
-    }));
+    return Object.keys(students[0])
+      .filter(key => key !== 'parent' && key !== 'parent_id')
+      .map(key => ({
+        key,
+        label: fieldTranslations[key] || key
+      }));
   };
 
   const headers = getHeaders();
@@ -36,7 +45,9 @@ const StudentTable = ({ students, onEdit, onDelete }) => {
           <tr key={student.id}>
             {headers.map(header => (
               <td key={header.key}>
-                {header.key === 'has_parent' ? (student[header.key] ? 'Да' : 'Нет') : student[header.key]}
+                {header.key === 'has_parent' ? (student[header.key] ? 'Да' : 'Нет') : 
+               header.key === 'parent_telegram_id' ? (student.parent?.telegram_id || '') : 
+               student[header.key]}
               </td>
             ))}
             <td>

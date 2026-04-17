@@ -8,3 +8,4 @@ class Parent(Base):
     full_name = Column(String)
     phone = Column(String(20))
     email = Column(String)
+    telegram_id = Column(Integer, unique=True, index=True)

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routers import students, users, auth
 from db.session import engine
-from models.user import Base
+from models import Base
 
 Base.metadata.create_all(bind=engine)
 
