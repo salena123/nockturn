@@ -1,110 +1,145 @@
-import React, { useState, useEffect } from 'react';
-import api from '../api';
-import StudentTable from '../components/StudentTable';
-import StudentForm from '../components/StudentForm';
+import React, { useEffect, useState } from 'react';
 import DeleteConfirm from '../components/DeleteConfirm';
+import StudentForm from '../components/StudentForm';
+import StudentTable from '../components/StudentTable';
+import api from '../api';
+
 
 const Students = () => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [error, setError] = useState('');
   const [editingStudent, setEditingStudent] = useState(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingStudent, setDeletingStudent] = useState(null);
+  const [studentSubscriptions, setStudentSubscriptions] = useState([]);
+  const [subscriptionsForStudent, setSubscriptionsForStudent] = useState(null);
 
-  useEffect(() => {
-    const fetchStudents = async () => {
-      try {
-        const response = await api.get('/api/students');
-        setStudents(response.data);
-      } catch (error) {
-        console.error('Ошибка загрузки учеников:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStudents();
-  }, []);
-
-  const handleAddStudent = () => {
-    setEditingStudent(null);
-    setShowForm(true);
-  };
-
-  const handleEditStudent = (student) => {
-    setEditingStudent(student);
-    setShowForm(true);
-  };
-
-  const handleDeleteStudent = (student) => {
-    setDeletingStudent(student);
-    setShowDeleteConfirm(true);
-  };
-
-  const handleSaveStudent = () => {
-    setShowForm(false);
-    setEditingStudent(null);
-    api.get('/api/students')
-      .then(response => setStudents(response.data))
-      .catch(error => console.error('Ошибка перезагрузки учеников:', error));
-  };
-
-  const handleCancelStudent = () => {
-    setShowForm(false);
-    setEditingStudent(null);
-  };
-
-  const handleConfirmDelete = async () => {
+  const loadStudents = async () => {
     try {
-      await api.delete(`/api/students/${deletingStudent.id}`);
-      setStudents(students.filter(student => student.id !== deletingStudent.id));
-      setShowDeleteConfirm(false);
-      setDeletingStudent(null);
-    } catch (error) {
-      console.error('Ошибка удаления ученика:', error);
+      const response = await api.get('/api/students');
+      setStudents(response.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось загрузить учеников');
     }
   };
 
-  const handleCancelDelete = () => {
-    setShowDeleteConfirm(false);
-    setDeletingStudent(null);
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      await loadStudents();
+      setLoading(false);
+    };
+
+    load();
+  }, []);
+
+  const handleSave = async () => {
+    setEditingStudent(null);
+    await loadStudents();
   };
 
-  if (loading) return <div>Загрузка...</div>;
+  const handleDelete = async () => {
+    try {
+      await api.delete(`/api/students/${deletingStudent.id}`);
+      setDeletingStudent(null);
+      await loadStudents();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось удалить ученика');
+    }
+  };
+
+  const handleOpenSubscriptions = async (student) => {
+    try {
+      const response = await api.get(`/api/students/${student.id}/subscriptions`);
+      setSubscriptionsForStudent(student);
+      setStudentSubscriptions(response.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось загрузить договоры ученика');
+    }
+  };
+
+  if (loading) {
+    return <div>Загрузка учеников...</div>;
+  }
 
   return (
     <div>
       <h2>Ученики</h2>
-      
-      <button onClick={handleAddStudent} className="btn btn-primary mb-20">
+
+      {error && <div>{error}</div>}
+
+      <button type="button" onClick={() => setEditingStudent({})}>
         Добавить ученика
       </button>
 
-      {showForm && (
+      {editingStudent !== null && (
         <StudentForm
           student={editingStudent}
-          onSave={handleSaveStudent}
-          onCancel={handleCancelStudent}
+          onSave={handleSave}
+          onCancel={() => setEditingStudent(null)}
         />
       )}
 
       <StudentTable
         students={students}
-        onEdit={handleEditStudent}
-        onDelete={handleDeleteStudent}
+        onEdit={setEditingStudent}
+        onDelete={setDeletingStudent}
+        onOpenSubscriptions={handleOpenSubscriptions}
       />
 
-      {showDeleteConfirm && (
+      {subscriptionsForStudent && (
+        <div>
+          <h3>Договоры ученика: {subscriptionsForStudent.fio}</h3>
+          {!studentSubscriptions.length ? (
+            <div>Договоры не найдены.</div>
+          ) : (
+            <table border="1" cellPadding="6" cellSpacing="0">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Статус</th>
+                  <th>Тариф</th>
+                  <th>Всего занятий</th>
+                  <th>Остаток</th>
+                  <th>Цена</th>
+                  <th>Дата начала</th>
+                  <th>Дата окончания</th>
+                </tr>
+              </thead>
+              <tbody>
+                {studentSubscriptions.map((subscription) => (
+                  <tr key={subscription.id}>
+                    <td>{subscription.id}</td>
+                    <td>{subscription.status || ''}</td>
+                    <td>{subscription.tariff_id || ''}</td>
+                    <td>{subscription.lessons_total ?? ''}</td>
+                    <td>{subscription.balance_lessons ?? ''}</td>
+                    <td>{subscription.total_price ?? subscription.price ?? ''}</td>
+                    <td>{subscription.start_date || ''}</td>
+                    <td>{subscription.end_date || ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <button type="button" onClick={() => setSubscriptionsForStudent(null)}>
+            Закрыть
+          </button>
+        </div>
+      )}
+
+      {deletingStudent && (
         <DeleteConfirm
           item={deletingStudent}
           itemType="student"
-          onConfirm={handleConfirmDelete}
-          onCancel={handleCancelDelete}
+          onConfirm={handleDelete}
+          onCancel={() => setDeletingStudent(null)}
         />
       )}
     </div>
   );
 };
+
 
 export default Students;

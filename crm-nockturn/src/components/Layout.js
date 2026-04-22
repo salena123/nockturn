@@ -1,30 +1,60 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 
-function Layout({ children, onLogout, isTeacher, isSuperAdmin }) {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <Link to="/">
-          <h1>Музыкальная студия Ноктюрн</h1>
-        </Link>
 
-        <nav className="top-navigation">
-          <Link to="/students">Ученики</Link>
-          {!isTeacher && <Link to="/users">Пользователи</Link>}
-          {isSuperAdmin && <Link to="/editor">Редактор сайта</Link>}
+function Layout({ children, currentUser, onLogout }) {
+  const isTeacher = currentUser?.role === 'teacher';
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+
+  return (
+    <div>
+      <header>
+        <h1>
+          <Link to="/">Музыкальная студия Ноктюрн</Link>
+        </h1>
+
+        <div>
+          <div>Пользователь: {currentUser?.full_name || currentUser?.login}</div>
+          <div>Роль: {currentUser?.role}</div>
+        </div>
+
+        <nav>
+          <Link to="/">Главная</Link>{' | '}
+          <Link to="/students">Клиенты</Link>{' | '}
+          {!isTeacher && (
+            <>
+              <Link to="/users">Сотрудники</Link>{' | '}
+              <Link to="/subscriptions">Заключенные договоры</Link>{' | '}
+              <Link to="/payments">Платежи</Link>{' | '}
+            </>
+          )}
+          <Link to="/attendance">Посещаемость</Link>{' | '}
+          <Link to="/schedule">Расписание</Link>{' | '}
+          {!isTeacher && (
+            <>
+              <Link to="/tariffs">Тарифы</Link>{' | '}
+              <Link to="/discounts">Скидки</Link>{' | '}
+            </>
+          )}
+          {isSuperAdmin && (
+            <>
+              {' | '}
+              <Link to="/editor">Редактор сайта</Link>
+            </>
+          )}
         </nav>
 
-        <button onClick={onLogout} className="logout-button">
+        <button type="button" onClick={onLogout}>
           Выйти
         </button>
       </header>
 
-      <main className="main-content">
-        {children}
-      </main>
+      <hr />
+
+      <main>{children}</main>
     </div>
   );
 }
+
 
 export default Layout;

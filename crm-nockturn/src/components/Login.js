@@ -1,71 +1,74 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
+
 const Login = ({ onLogin }) => {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
     setError('');
 
     try {
       const response = await axios.post('http://localhost:8000/api/auth/login', {
         login,
-        password
+        password,
       });
 
-      const token = response.data.access_token;
-      console.log(response.data);
-      localStorage.setItem('token', token);
-      onLogin(token);
-
+      onLogin(response.data.access_token, response.data.refresh_token);
     } catch (err) {
-      const errorMessage = err.response?.data?.detail || 'Ошибка входа';
-      setError(errorMessage);
+      setError(err.response?.data?.detail || 'Ошибка входа');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="login-container">
-      <div className="login-card">
-        <h2>Вход в CRM</h2>
-        <form onSubmit={handleSubmit}>
-          {error && <div className="error-message">{error}</div>}
-          <div className="form-group">
-            <label htmlFor="login">Логин:</label>
-            <input
-              type="text"
-              id="login"
-              value={login}
-              onChange={(e) => setLogin(e.target.value)}
-              required
-              placeholder="admin"
-            />
+    <div>
+      <h2>Вход в CRM</h2>
+
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label htmlFor="login">Логин</label>
+          <br />
+          <input
+            id="login"
+            type="text"
+            value={login}
+            onChange={(event) => setLogin(event.target.value)}
+            required
+          />
+        </div>
+
+        <div>
+          <label htmlFor="password">Пароль</label>
+          <br />
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+        </div>
+
+        {error && (
+          <div>
+            <strong>Ошибка:</strong> {error}
           </div>
-          <div className="form-group">
-            <label htmlFor="password">Пароль:</label>
-            <input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="1234"
-            />
-          </div>
-          <button type="submit" disabled={loading} className="login-button">
-            {loading ? 'Вход...' : 'Войти'}
-          </button>
-        </form>
-      </div>
+        )}
+
+        <button type="submit" disabled={loading}>
+          {loading ? 'Вход...' : 'Войти'}
+        </button>
+      </form>
     </div>
   );
 };
+
 
 export default Login;

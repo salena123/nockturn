@@ -28,7 +28,7 @@ const PublicSiteEditor = () => {
 
     return (
         <div>
-            <h2>Redaktirovat' publichnyi sayta</h2>
+            <h2>Редактировать публичный сайт</h2>
             <a 
                 href="http://localhost:1337/admin" 
                 target="_blank" 

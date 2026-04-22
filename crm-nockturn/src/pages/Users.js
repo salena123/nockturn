@@ -1,123 +1,119 @@
-import React, { useState, useEffect } from 'react';
-import api from '../api';
-import UserTable from '../components/UserTable';
-import UserForm from '../components/UserForm';
+import React, { useEffect, useState } from 'react';
 import DeleteConfirm from '../components/DeleteConfirm';
+import UserForm from '../components/UserForm';
+import UserTable from '../components/UserTable';
+import api from '../api';
 
-const Users = () => {
+
+const Users = ({ currentUser }) => {
   const [users, setUsers] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [editingUser, setEditingUser] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);
 
   const loadUsers = async () => {
     try {
-      const res = await api.get('/api/users');
-      setUsers(res.data);
-    } catch (error) {
-      console.error('Ошибка загрузки пользователей:', error);
-    }
-  };
-
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const res = await api.get('/api/me');
-        setCurrentUser(res.data);
-      } catch (error) {
-        console.error('Ошибка инициализации:', error);
-      }
-    };
-
-    init();
-  }, []);
-
-  useEffect(() => {
-  if (!currentUser) return;
-
-  const fetchUsers = async () => {
-    try {
       const response = await api.get('/api/users');
       setUsers(response.data);
-    } catch (error) {
-      console.error('Ошибка загрузки учеников:', error);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось загрузить сотрудников');
     }
   };
 
-  fetchUsers();
-}, [currentUser]);
+  const loadRoles = async () => {
+    try {
+      const response = await api.get('/api/roles');
+      setRoles(response.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось загрузить роли');
+    }
+  };
 
-  const canAddUser =
-    currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      await Promise.all([loadUsers(), loadRoles()]);
+      setLoading(false);
+    };
 
-  const openCreate = () => setEditingUser({});
-  const openEdit = (user) => setEditingUser(user);
-
-  const closeForm = () => setEditingUser(null);
+    load();
+  }, []);
 
   const handleSave = async () => {
-    closeForm();
+    setEditingUser(null);
     await loadUsers();
   };
 
-  const handleDelete = (user) => setDeletingUser(user);
-
-  const confirmDelete = async () => {
+  const handleToggleBlock = async (user) => {
     try {
-      await api.delete(`/api/users/${deletingUser.id}`);
-      setUsers(users.filter(u => u.id !== deletingUser.id));
-      setDeletingUser(null);
-    } catch (error) {
-      console.error('Ошибка удаления:', error);
+      const endpoint = user.is_active
+        ? `/api/users/${user.id}/block`
+        : `/api/users/${user.id}/unblock`;
+      await api.post(endpoint);
+      await loadUsers();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось изменить статус сотрудника');
     }
   };
 
-  const cancelDelete = () => setDeletingUser(null);
+  const handleDelete = async () => {
+    try {
+      await api.delete(`/api/users/${deletingUser.id}`);
+      setDeletingUser(null);
+      await loadUsers();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось удалить сотрудника');
+    }
+  };
 
-  if (loading) return <div>Загрузка...</div>;
   if (currentUser?.role === 'teacher') {
-  return <h3>Преподавателям недоступен список пользователей</h3>;
-}
+    return <div>Раздел сотрудников доступен только администратору.</div>;
+  }
+
+  if (loading) {
+    return <div>Загрузка сотрудников...</div>;
+  }
 
   return (
     <div>
-      <h2>Пользователи</h2>
+      <h2>Сотрудники</h2>
 
-      {canAddUser && (
-        <button onClick={openCreate} className="btn btn-primary mb-20">
-          Добавить пользователя
-        </button>
-      )}
+      {error && <div>{error}</div>}
+
+      <button type="button" onClick={() => setEditingUser({})}>
+        Добавить сотрудника
+      </button>
 
       {editingUser !== null && (
         <UserForm
           user={editingUser}
-          currentUser={currentUser}
+          roles={roles}
           onSave={handleSave}
-          onCancel={closeForm}
+          onCancel={() => setEditingUser(null)}
         />
       )}
 
       <UserTable
         users={users}
-        currentUser={currentUser}
-        onEdit={openEdit}
-        onDelete={handleDelete}
+        onEdit={setEditingUser}
+        onDelete={setDeletingUser}
+        onToggleBlock={handleToggleBlock}
       />
 
       {deletingUser && (
         <DeleteConfirm
           item={deletingUser}
           itemType="user"
-          onConfirm={confirmDelete}
-          onCancel={cancelDelete}
+          onConfirm={handleDelete}
+          onCancel={() => setDeletingUser(null)}
         />
       )}
     </div>
   );
 };
+
 
 export default Users;

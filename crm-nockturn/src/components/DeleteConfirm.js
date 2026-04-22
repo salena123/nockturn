@@ -1,52 +1,60 @@
 import React from 'react';
 
+
 const DeleteConfirm = ({ item, itemType, onConfirm, onCancel }) => {
   const getItemName = () => {
-    if (itemType === 'user') {
-      return item.login;
-    } else if (itemType === 'student') {
-      return item.fio;
+    switch (itemType) {
+      case 'user':
+        return item.login;
+      case 'student':
+        return item.fio;
+      case 'tariff':
+        return item.name;
+      case 'discount':
+        return item.name;
+      case 'subscription':
+        return `с учеником ${item.student_name || item.id}`;
+      default:
+        return item.name || item.fio || item.login || 'item';
     }
-    return '';
   };
 
   const getItemTypeText = () => {
-    if (itemType === 'user') {
-      return 'пользователя';
-    } else if (itemType === 'student') {
-      return 'ученика';
+    switch (itemType) {
+      case 'user':
+        return 'сотрудника';
+      case 'student':
+        return 'ученика';
+      case 'tariff':
+        return 'тариф';
+      case 'discount':
+        return 'скидку';
+      case 'subscription':
+        return 'договор';
+      default:
+        return 'item';
     }
-    return '';
   };
 
+  const itemName = getItemName();
+  const itemTypeText = getItemTypeText();
+
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <h3>Подтверждение удаления</h3>
-        <p>
-          Вы уверены, что хотите удалить {getItemTypeText()} "<strong>{getItemName()}</strong>"?
-        </p>
-        <p className="modal-warning">
-          Это действие нельзя будет отменить.
-        </p>
-        
-        <div className="modal-buttons">
-          <button 
-            onClick={onConfirm}
-            className="btn btn-danger mr-10"
-          >
-            Да, удалить
-          </button>
-          <button 
-            onClick={onCancel}
-            className="btn btn-secondary"
-          >
-            Отмена
-          </button>
-        </div>
-      </div>
+    <div>
+      <h3>Подтверждение удаления</h3>
+      <p>
+        Вы уверены, что хотите удалить {itemTypeText} <strong>{itemName}</strong>?
+      </p>
+
+      <button type="button" onClick={onConfirm}>
+        Да, удалить
+      </button>{' '}
+      <button type="button" onClick={onCancel}>
+        Отмена
+      </button>
     </div>
   );
 };
+
 
 export default DeleteConfirm;
