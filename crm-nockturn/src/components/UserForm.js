@@ -14,11 +14,13 @@ const EMPTY_FORM = {
 };
 
 
-const UserForm = ({ user, roles, onSave, onCancel }) => {
+const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUserSuccess, onCancel }) => {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [generatedPassword, setGeneratedPassword] = useState('');
+
+  const availableRoles = roles.filter(role => role.name !== 'superadmin');
 
   useEffect(() => {
     if (user?.id) {
@@ -56,6 +58,27 @@ const UserForm = ({ user, roles, onSave, onCancel }) => {
     setError('');
     setGeneratedPassword('');
 
+    if (!user?.id && !formData.generate_password && formData.password) {
+      if (formData.password.length < 8) {
+        setError('Пароль должен быть не короче 8 символов');
+        setLoading(false);
+        return;
+      }
+      const hasLetter = /[^\d\s]/.test(formData.password);
+      const hasDigit = /\d/.test(formData.password);
+      if (!hasLetter || !hasDigit) {
+        setError('Пароль должен содержать буквы и цифры');
+        setLoading(false);
+        return;
+      }
+    }
+
+    if (!user?.id && !formData.password && !formData.generate_password) {
+      setError('Введите пароль или включите автоматическую генерацию');
+      setLoading(false);
+      return;
+    }
+
     try {
       if (user?.id) {
         await api.put(`/api/users/${user.id}`, {
@@ -67,15 +90,33 @@ const UserForm = ({ user, roles, onSave, onCancel }) => {
           hire_date: formData.hire_date || null,
         });
 
+        let currentGeneratedPassword = '';
         if (formData.password || formData.generate_password) {
           const resetResponse = await api.post(`/api/users/${user.id}/reset-password`, {
             password: formData.password || null,
             generate_password: formData.generate_password,
           });
-          setGeneratedPassword(resetResponse.data.generated_password || '');
+                    currentGeneratedPassword = resetResponse.data.generated_password || '';
+          setGeneratedPassword(currentGeneratedPassword);
+        }
+
+        const updatedUserData = {
+          login: formData.login,
+          full_name: formData.full_name,
+          phone: formData.phone,
+          role: availableRoles.find(r => r.id === parseInt(formData.role_id))?.name,
+          is_active: formData.is_active
+        };
+        
+                if (onUserSuccess) {
+          onUserSuccess(updatedUserData, currentGeneratedPassword, true);
+        }
+        
+        if (onUserUpdated) {
+          onUserUpdated();
         }
       } else {
-        const response = await api.post('/api/users', {
+        const userData = {
           login: formData.login,
           password: formData.password || null,
           full_name: formData.full_name || null,
@@ -84,13 +125,49 @@ const UserForm = ({ user, roles, onSave, onCancel }) => {
           is_active: formData.is_active,
           hire_date: formData.hire_date || null,
           generate_password: formData.generate_password,
-        });
-        setGeneratedPassword(response.data.generated_password || '');
+        };
+        const response = await api.post('/api/users', userData);
+        const currentGeneratedPassword = response.data.generated_password || '';
+        setGeneratedPassword(currentGeneratedPassword);
+        
+        const newUserData = {
+          login: formData.login,
+          full_name: formData.full_name,
+          phone: formData.phone,
+          role: availableRoles.find(r => r.id === parseInt(formData.role_id))?.name,
+          is_active: formData.is_active
+        };
+        
+                if (onUserSuccess) {
+          onUserSuccess(newUserData, currentGeneratedPassword, false);
+        }
+        
+        if (onUserCreated) {
+          onUserCreated();
+        }
       }
-
-      onSave();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось сохранить сотрудника');
+      if (err.response?.data?.detail && Array.isArray(err.response.data.detail)) {
+        const validationErrors = err.response.data.detail;
+        const errorMessages = validationErrors.map(error => {
+          const fieldName = error.loc[1];
+          const message = error.msg;
+          
+          if (message.includes('at least 3 characters')) {
+            return `Логин - минимум 3 символа`;
+          }
+          if (message.includes('at least 8 characters')) {
+            return `Пароль - минимум 8 символов`;
+          }
+          if (message.includes('String should have at least')) {
+            return `${fieldName} - минимум ${error.ctx?.min_length || ''} символов`;
+          }
+          return message;
+        });
+        setError(errorMessages.join('. '));
+      } else {
+        setError(err.response?.data?.detail || 'Ошибка сохранения пользователя');
+      }
     } finally {
       setLoading(false);
     }
@@ -103,10 +180,10 @@ const UserForm = ({ user, roles, onSave, onCancel }) => {
       <form onSubmit={handleSubmit}>
         <div>
           <label>
-            Логин (email)
+            Логин
             <br />
             <input
-              type="email"
+              type="text"
               name="login"
               value={formData.login}
               onChange={handleChange}
@@ -145,19 +222,30 @@ const UserForm = ({ user, roles, onSave, onCancel }) => {
           <label>
             Роль
             <br />
-            <select
-              name="role_id"
-              value={formData.role_id}
-              onChange={handleChange}
-              required
-            >
-              <option value="">Выберите роль</option>
-              {roles.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.name}
-                </option>
-              ))}
-            </select>
+            {user?.id && user.id === currentUser?.id ? (
+              <div>
+                <input
+                  type="text"
+                  value={availableRoles.find(r => r.id === parseInt(formData.role_id))?.name || ''}
+                  disabled
+                  style={{ backgroundColor: '#f5f5f5', color: '#666' }}
+                />
+                </div>
+            ) : (
+              <select
+                name="role_id"
+                value={formData.role_id}
+                onChange={handleChange}
+                required
+              >
+                <option value="">Выберите роль</option>
+                {availableRoles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
         </div>
 
@@ -213,11 +301,6 @@ const UserForm = ({ user, roles, onSave, onCancel }) => {
         </div>
 
         {error && <div>{error}</div>}
-        {generatedPassword && (
-          <div>
-            <strong>Сгенерированный пароль:</strong> {generatedPassword}
-          </div>
-        )}
 
         <button type="submit" disabled={loading}>
           {loading ? 'Сохранение...' : 'Сохранить'}

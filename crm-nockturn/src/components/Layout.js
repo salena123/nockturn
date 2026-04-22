@@ -20,7 +20,7 @@ function Layout({ children, currentUser, onLogout }) {
 
         <nav>
           <Link to="/">Главная</Link>{' | '}
-          <Link to="/students">Клиенты</Link>{' | '}
+          <Link to="/students">Ученики</Link>{' | '}
           {!isTeacher && (
             <>
               <Link to="/users">Сотрудники</Link>{' | '}
@@ -38,7 +38,6 @@ function Layout({ children, currentUser, onLogout }) {
           )}
           {isSuperAdmin && (
             <>
-              {' | '}
               <Link to="/editor">Редактор сайта</Link>
             </>
           )}

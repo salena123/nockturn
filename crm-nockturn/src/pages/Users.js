@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import DeleteConfirm from '../components/DeleteConfirm';
 import UserForm from '../components/UserForm';
 import UserTable from '../components/UserTable';
+import UserSuccessModal from '../components/UserSuccessModal';
 import api from '../api';
-
 
 const Users = ({ currentUser }) => {
   const [users, setUsers] = useState([]);
@@ -12,6 +12,10 @@ const Users = ({ currentUser }) => {
   const [error, setError] = useState('');
   const [editingUser, setEditingUser] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);
+  const [successModalOpen, setSuccessModalOpen] = useState(false);
+  const [successUserData, setSuccessUserData] = useState(null);
+  const [successPassword, setSuccessPassword] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(false);
 
   const loadUsers = async () => {
     try {
@@ -42,30 +46,45 @@ const Users = ({ currentUser }) => {
     load();
   }, []);
 
-  const handleSave = async () => {
-    setEditingUser(null);
+  
+  const handleUserCreated = async () => {
     await loadUsers();
+    setEditingUser(null);
+  };
+
+  const handleUserUpdated = async () => {
+    await loadUsers();
+    setEditingUser(null);
+  };
+
+  const handleUserSuccess = (userData, generatedPassword, isEdit) => {
+    setSuccessUserData(userData);
+    setSuccessPassword(generatedPassword);
+    setIsEditMode(isEdit);
+    setSuccessModalOpen(true);
   };
 
   const handleToggleBlock = async (user) => {
     try {
+      
       const endpoint = user.is_active
         ? `/api/users/${user.id}/block`
         : `/api/users/${user.id}/unblock`;
       await api.post(endpoint);
       await loadUsers();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось изменить статус сотрудника');
+      setError(err.response?.data?.detail || 'Ошибка изменения статуса пользователя');
     }
   };
 
   const handleDelete = async () => {
     try {
+      
       await api.delete(`/api/users/${deletingUser.id}`);
       setDeletingUser(null);
       await loadUsers();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось удалить сотрудника');
+      setError(err.response?.data?.detail || 'Ошибка удаления пользователя');
     }
   };
 
@@ -91,13 +110,17 @@ const Users = ({ currentUser }) => {
         <UserForm
           user={editingUser}
           roles={roles}
-          onSave={handleSave}
+          currentUser={currentUser}
+          onUserCreated={handleUserCreated}
+          onUserUpdated={handleUserUpdated}
+          onUserSuccess={handleUserSuccess}
           onCancel={() => setEditingUser(null)}
         />
       )}
 
       <UserTable
         users={users}
+        currentUser={currentUser}
         onEdit={setEditingUser}
         onDelete={setDeletingUser}
         onToggleBlock={handleToggleBlock}
@@ -111,6 +134,14 @@ const Users = ({ currentUser }) => {
           onCancel={() => setDeletingUser(null)}
         />
       )}
+
+      <UserSuccessModal
+        isOpen={successModalOpen}
+        onClose={() => setSuccessModalOpen(false)}
+        user={successUserData}
+        generatedPassword={successPassword}
+        isEdit={isEditMode}
+      />
     </div>
   );
 };

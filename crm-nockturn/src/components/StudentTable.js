@@ -3,7 +3,7 @@ import React from 'react';
 
 const StudentTable = ({ students, onEdit, onDelete, onOpenSubscriptions }) => {
   if (!students.length) {
-    return <div>Клиенты не найдены.</div>;
+    return <div>Ученики не найдены.</div>;
   }
 
   return (

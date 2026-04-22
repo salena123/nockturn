@@ -181,7 +181,7 @@ def update_user(
             raise HTTPException(status_code=400, detail="Такой пользователь уже существует")
         target_user.login = data.login
 
-    if data.role_id is not None:
+    if data.role_id is not None and current_user.id != user_id:
         role = get_role_or_404(db, data.role_id)
         ensure_role_assignable(current_user, role)
         target_user.role_id = data.role_id
@@ -283,6 +283,10 @@ def delete_user(
 
     target_user = get_user_or_404(db, user_id)
     ensure_manageable_by_current_user(current_user, target_user)
+    
+    from models.refreshToken import RefreshToken
+    db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete()
+    
     db.delete(target_user)
     db.commit()
 

@@ -93,7 +93,7 @@ const StudentForm = ({ student, onSave, onCancel }) => {
 
       onSave();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось сохранить клиента');
+      setError(err.response?.data?.detail || 'Не удалось сохранить ученика');
     } finally {
       setLoading(false);
     }
@@ -101,7 +101,7 @@ const StudentForm = ({ student, onSave, onCancel }) => {
 
   return (
     <div>
-      <h3>{student?.id ? 'Редактирование клиента' : 'Новый клиент'}</h3>
+      <h3>{student?.id ? 'Редактирование ученика' : 'Новый ученик'}</h3>
 
       <form onSubmit={handleSubmit}>
         <div>

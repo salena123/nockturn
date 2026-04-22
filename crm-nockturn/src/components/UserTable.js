@@ -1,7 +1,7 @@
 import React from 'react';
 
 
-const UserTable = ({ users, onEdit, onDelete, onToggleBlock }) => {
+const UserTable = ({ users, currentUser, onEdit, onDelete, onToggleBlock }) => {
   if (!users.length) {
     return <div>Сотрудники не найдены.</div>;
   }
@@ -31,15 +31,23 @@ const UserTable = ({ users, onEdit, onDelete, onToggleBlock }) => {
             <td>{user.is_active ? 'Да' : 'Нет'}</td>
             <td>{user.hire_date || ''}</td>
             <td>
-              <button type="button" onClick={() => onEdit(user)}>
-                Редактировать
-              </button>{' '}
-              <button type="button" onClick={() => onToggleBlock(user)}>
-                {user.is_active ? 'Заблокировать' : 'Разблокировать'}
-              </button>{' '}
-              <button type="button" onClick={() => onDelete(user)}>
-                Удалить
-              </button>
+              {!(currentUser.role === 'admin' && user.role === 'superadmin') && (
+                <button type="button" onClick={() => onEdit(user)}>
+                  Редактировать
+                </button>
+              )}{' '}
+              
+              {!(user.id === currentUser.id || (currentUser.role === 'admin' && user.role === 'superadmin')) && (
+                <button type="button" onClick={() => onToggleBlock(user)}>
+                  {user.is_active ? 'Заблокировать' : 'Разблокировать'}
+                </button>
+              )}{' '}
+              
+              {!(user.id === currentUser.id || (currentUser.role === 'admin' && user.role === 'superadmin')) && (
+                <button type="button" onClick={() => onDelete(user)}>
+                  Удалить
+                </button>
+              )}
             </td>
           </tr>
         ))}
