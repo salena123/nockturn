@@ -1,7 +1,15 @@
 import React from 'react';
 
 
-const UserTable = ({ users, currentUser, onEdit, onDelete, onToggleBlock }) => {
+const UserTable = ({
+  users,
+  currentUser,
+  onEdit,
+  onDelete,
+  onToggleBlock,
+  onOpenHistory,
+  onOpenDocuments,
+}) => {
   if (!users.length) {
     return <div>Сотрудники не найдены.</div>;
   }
@@ -36,13 +44,17 @@ const UserTable = ({ users, currentUser, onEdit, onDelete, onToggleBlock }) => {
                   Редактировать
                 </button>
               )}{' '}
-              
+              <button type="button" onClick={() => onOpenHistory(user)}>
+                История
+              </button>{' '}
+              <button type="button" onClick={() => onOpenDocuments(user)}>
+                Документы
+              </button>{' '}
               {!(user.id === currentUser.id || (currentUser.role === 'admin' && user.role === 'superadmin')) && (
                 <button type="button" onClick={() => onToggleBlock(user)}>
                   {user.is_active ? 'Заблокировать' : 'Разблокировать'}
                 </button>
               )}{' '}
-              
               {!(user.id === currentUser.id || (currentUser.role === 'admin' && user.role === 'superadmin')) && (
                 <button type="button" onClick={() => onDelete(user)}>
                   Удалить

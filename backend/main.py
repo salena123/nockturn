@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import attendance, auth, payments, students, subscriptions, users, schedule, disciplines, rooms, tariffs, discounts, teachers
+from api.routers import attendance, auth, payments, students, subscriptions, users, schedule, disciplines, rooms, tariffs, discounts, teachers, user_documents, student_waitlist, student_notes
 from db.session import engine
 from models import Base
 
@@ -29,3 +29,6 @@ app.include_router(rooms.router)
 app.include_router(tariffs.router)
 app.include_router(discounts.router)
 app.include_router(teachers.router)
+app.include_router(user_documents.router)
+app.include_router(student_waitlist.router)
+app.include_router(student_notes.router)

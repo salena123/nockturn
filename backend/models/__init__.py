@@ -19,3 +19,8 @@ from .room import Room
 from .lessonIssue import LessonIssue
 from .scheduleHistory import ScheduleHistory
 from .scheduleRecurring import ScheduleRecurring
+from .entityChangeLog import EntityChangeLog
+from .userDocument import UserDocument
+from .archivedUser import ArchivedUser
+from .studentWaitlist import StudentWaitlist
+from .studentNote import StudentNote

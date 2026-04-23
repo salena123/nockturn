@@ -1,7 +1,17 @@
 import React from 'react';
 
 
-const StudentTable = ({ students, onEdit, onDelete, onOpenSubscriptions }) => {
+const StudentTable = ({
+  students,
+  onEdit,
+  onDelete,
+  onView,
+  onEditComment,
+  onOpenNotes,
+  onOpenSubscriptions,
+  onOpenHistory,
+  onOpenWaitlist,
+}) => {
   if (!students.length) {
     return <div>Ученики не найдены.</div>;
   }
@@ -17,6 +27,7 @@ const StudentTable = ({ students, onEdit, onDelete, onOpenSubscriptions }) => {
           <th>Статус</th>
           <th>Уровень</th>
           <th>Ответственный</th>
+          <th>Комментарий</th>
           <th>Действия</th>
         </tr>
       </thead>
@@ -31,11 +42,29 @@ const StudentTable = ({ students, onEdit, onDelete, onOpenSubscriptions }) => {
             <td>{student.level || ''}</td>
             <td>{student.parent_name || ''}</td>
             <td>
+              {student.comment?.trim() ? student.comment : 'Комментарий не указан'}{' '}
+              <button type="button" onClick={() => onEditComment(student)}>
+                Изменить
+              </button>
+            </td>
+            <td>
+              <button type="button" onClick={() => onView(student)}>
+                Просмотр
+              </button>{' '}
               <button type="button" onClick={() => onEdit(student)}>
                 Редактировать
               </button>{' '}
+              <button type="button" onClick={() => onOpenNotes(student)}>
+                Заметки
+              </button>{' '}
               <button type="button" onClick={() => onOpenSubscriptions(student)}>
                 Договоры
+              </button>{' '}
+              <button type="button" onClick={() => onOpenHistory(student)}>
+                История
+              </button>{' '}
+              <button type="button" onClick={() => onOpenWaitlist(student)}>
+                Лист ожидания
               </button>{' '}
               <button type="button" onClick={() => onDelete(student)}>
                 Удалить
