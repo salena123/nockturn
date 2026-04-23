@@ -7,5 +7,5 @@ class DiscountRule(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255))
-    type = Column(String(20))  # fixed/percentage
+    type = Column(String(20))  
     value = Column(Numeric(10, 2))

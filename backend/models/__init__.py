@@ -6,6 +6,7 @@ from .parent import Parent
 from .discountRule import DiscountRule
 from .lessonAttendance import LessonAttendance
 from .lesson import Lesson
+from .lessonStudent import LessonStudent
 from .payment import Payment
 from .scheduleEvent import ScheduleEvent
 from .studentSchedule import StudentSchedule

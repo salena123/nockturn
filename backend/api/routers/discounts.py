@@ -59,7 +59,7 @@ def delete_discount(
     if not discount:
         raise HTTPException(status_code=404, detail="Скидка не найдена")
     
-    # Check if discount is used in any subscriptions
+    
     from models.subscription import Subscription
     subscriptions_using = db.query(Subscription).filter(Subscription.discount_id == discount_id).count()
     if subscriptions_using > 0:

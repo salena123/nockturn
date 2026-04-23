@@ -24,6 +24,7 @@ function Layout({ children, currentUser, onLogout }) {
           {!isTeacher && (
             <>
               <Link to="/users">Сотрудники</Link>{' | '}
+              <Link to="/teachers">Преподаватели</Link>{' | '}
               <Link to="/subscriptions">Заключенные договоры</Link>{' | '}
               <Link to="/payments">Платежи</Link>{' | '}
             </>
@@ -34,6 +35,8 @@ function Layout({ children, currentUser, onLogout }) {
             <>
               <Link to="/tariffs">Тарифы</Link>{' | '}
               <Link to="/discounts">Скидки</Link>{' | '}
+              <Link to="/disciplines">Дисциплины</Link>{' | '}
+              <Link to="/rooms">Кабинеты</Link>{' | '}
             </>
           )}
           {isSuperAdmin && (

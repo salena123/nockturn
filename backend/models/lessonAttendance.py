@@ -16,7 +16,7 @@ class LessonAttendance(Base):
     lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="CASCADE"))
     student_id = Column(Integer, ForeignKey("students.id"))
     subscription_id = Column(Integer, ForeignKey("subscriptions.id"), nullable=True)
-    status = Column(String(50))  # done / miss_valid / miss_invalid
+    status = Column(String(50))  
     comment = Column(Text)
     price_per_lesson = Column(Numeric(10, 2))
     is_charged = Column(Boolean, default=False, server_default=text("false"))

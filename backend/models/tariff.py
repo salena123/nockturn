@@ -7,7 +7,7 @@ class Tariff(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    type = Column(String(50), nullable=False)  # individual/group
-    lessons_per_week = Column(Integer, nullable=False)  # 1 or 2
+    type = Column(String(50), nullable=False)  
+    lessons_per_week = Column(Integer, nullable=False)  
     price_per_lesson = Column(Numeric(10, 2), nullable=False)
     duration_months = Column(Integer, nullable=False)

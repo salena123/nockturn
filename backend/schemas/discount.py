@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 class DiscountBase(BaseModel):
     name: str
-    type: str  # fixed/percentage
+    type: str  
     value: float
 
 

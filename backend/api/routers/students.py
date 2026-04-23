@@ -1,7 +1,7 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
-from core.access import require_admin
+from core.access import require_admin, require_staff
 from core.deps import get_current_user, get_db
 from models.parent import Parent
 from models.student import Student
@@ -171,7 +171,7 @@ def get_students(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    require_admin(current_user)
+    require_staff(current_user)
 
     query = db.query(Student).options(joinedload(Student.parent))
 

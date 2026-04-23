@@ -38,7 +38,7 @@ def calculate_subscription_pricing(db: Session, tariff_id: int, discount_id: int
     if not tariff:
         raise HTTPException(status_code=404, detail="Tariff not found")
     
-    weeks_in_duration = Decimal(str(tariff.duration_months)) * Decimal('4')  # approximate 4 weeks per month
+    weeks_in_duration = Decimal(str(tariff.duration_months)) * Decimal('4')  
     lessons_total = int(tariff.lessons_per_week * weeks_in_duration)
     
     price_per_lesson = Decimal(str(tariff.price_per_lesson))

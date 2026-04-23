@@ -11,8 +11,11 @@ import Students from './pages/Students';
 import SubscriptionsPage from './pages/SubscriptionsPage';
 import TariffsPage from './pages/TariffsPage';
 import DiscountsPage from './pages/DiscountsPage';
+import DisciplinesPage from './pages/DisciplinesPage';
 import Users from './pages/Users';
+import TeachersPage from './pages/TeachersPage';
 import PublicSiteEditor from './pages/PublicSiteEditor';
+import RoomsPage from './pages/RoomsPage';
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -68,12 +71,15 @@ function App() {
           <Route path="/" element={<Home currentUser={currentUser} />} />
           <Route path="/students" element={<Students currentUser={currentUser} />} />
           <Route path="/users" element={<Users currentUser={currentUser} />} />
+          <Route path="/teachers" element={<TeachersPage />} />
           <Route path="/subscriptions" element={<SubscriptionsPage currentUser={currentUser} />} />
           <Route path="/payments" element={<PaymentsPage currentUser={currentUser} />} />
           <Route path="/attendance" element={<AttendancePage currentUser={currentUser} />} />
           <Route path="/schedule" element={<SchedulePage currentUser={currentUser} />} />
           <Route path="/tariffs" element={<TariffsPage currentUser={currentUser} />} />
           <Route path="/discounts" element={<DiscountsPage currentUser={currentUser} />} />
+          <Route path="/disciplines" element={<DisciplinesPage currentUser={currentUser} />} />
+          <Route path="/rooms" element={<RoomsPage currentUser={currentUser} />} />
           <Route path="/editor" element={<PublicSiteEditor />} />
         </Routes>
       </Layout>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from .base import Base
 
@@ -10,6 +10,8 @@ class Lesson(Base):
     schedule_id = Column(Integer, ForeignKey("schedule_events.id"))
     lesson_date = Column(Date)
     status = Column(String(50), default='planned')
+    lesson_type = Column(String(20), default='individual')  
+    max_students = Column(Integer, default=1)
     created_at = Column(DateTime)
 
     schedule = relationship("ScheduleEvent", backref="lessons")

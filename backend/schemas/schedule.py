@@ -42,16 +42,21 @@ class LessonBase(BaseModel):
     schedule_id: int
     lesson_date: date
     status: str = 'planned'
+    lesson_type: str = 'individual'  
+    max_students: int = 1
 
 
 class LessonCreate(LessonBase):
-    pass
+    student_ids: list[int] = []
 
 
 class LessonUpdate(BaseModel):
     schedule_id: int = None
     lesson_date: date = None
     status: str = None
+    lesson_type: str = None
+    max_students: int = None
+    student_ids: list[int] = None
 
 
 class Lesson(LessonBase):
