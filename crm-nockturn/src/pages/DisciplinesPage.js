@@ -1,41 +1,46 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import api from '../api';
+import useActionDialog from '../components/ui/useActionDialog';
 
 const DisciplinesPage = () => {
   const [disciplines, setDisciplines] = useState([]);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const { dialog, showError, showSuccess } = useActionDialog();
 
-  const loadDisciplines = async () => {
+  const loadDisciplines = useCallback(async () => {
     try {
       const response = await api.get('/api/disciplines/');
       setDisciplines(response.data);
     } catch (error) {
       console.error('Ошибка загрузки дисциплин:', error);
-      alert(error.response?.data?.detail || 'Не удалось загрузить дисциплины');
+      await showError(error.response?.data?.detail || 'Не удалось загрузить дисциплины');
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
 
   useEffect(() => {
     loadDisciplines();
-  }, []);
+  }, [loadDisciplines]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     const trimmedName = name.trim();
-    if (!trimmedName) return;
+    if (!trimmedName) {
+      return;
+    }
 
     try {
       setSubmitting(true);
       await api.post('/api/disciplines/', null, { params: { name: trimmedName } });
       setName('');
       await loadDisciplines();
+      await showSuccess('Дисциплина успешно создана.');
     } catch (error) {
       console.error('Ошибка создания дисциплины:', error);
-      alert(error.response?.data?.detail || 'Не удалось создать дисциплину');
+      await showError(error.response?.data?.detail || 'Не удалось создать дисциплину');
     } finally {
       setSubmitting(false);
     }
@@ -51,7 +56,7 @@ const DisciplinesPage = () => {
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(event) => setName(event.target.value)}
             placeholder="Например, вокал"
           />
         </label>
@@ -80,6 +85,8 @@ const DisciplinesPage = () => {
           </tbody>
         </table>
       )}
+
+      {dialog}
     </div>
   );
 };

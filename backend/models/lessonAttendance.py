@@ -21,5 +21,6 @@ class LessonAttendance(Base):
     price_per_lesson = Column(Numeric(10, 2))
     is_charged = Column(Boolean, default=False, server_default=text("false"))
 
+    lesson = relationship("Lesson", backref="attendance_records")
     student = relationship("Student", backref="lesson_attendance")
     subscription = relationship("Subscription", backref="lesson_attendance")

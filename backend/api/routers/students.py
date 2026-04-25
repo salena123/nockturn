@@ -7,9 +7,13 @@ from core.access import require_admin, require_staff
 from core.deps import get_current_user, get_db
 from core.entity_changes import log_entity_change, log_model_updates
 from models.entityChangeLog import EntityChangeLog
+from models.lesson import Lesson
+from models.lessonStudent import LessonStudent
 from models.parent import Parent
+from models.scheduleEvent import ScheduleEvent
 from models.student import Student
 from models.subscription import Subscription
+from models.teacher import Teacher
 from models.user import User
 from schemas.student import StudentCreate, StudentResponse, StudentUpdate
 from schemas.subscription import SubscriptionResponse
@@ -28,6 +32,30 @@ def get_age(birth_date: date | None) -> int | None:
     today = date.today()
     return today.year - birth_date.year - (
         (today.month, today.day) < (birth_date.month, birth_date.day)
+    )
+
+
+def is_teacher_user(user: User) -> bool:
+    return getattr(getattr(user, "role", None), "name", None) == "teacher"
+
+
+def get_teacher_for_current_user(db: Session, current_user: User) -> Teacher | None:
+    if not is_teacher_user(current_user):
+        return None
+
+    return db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
+
+
+def apply_teacher_student_scope(query, teacher: Teacher | None):
+    if teacher is None:
+        return query
+
+    return (
+        query.join(Student.lesson_students)
+        .join(LessonStudent.lesson)
+        .join(Lesson.schedule)
+        .filter(ScheduleEvent.teacher_id == teacher.id)
+        .distinct()
     )
 
 
@@ -56,9 +84,15 @@ def validate_student_payload(data: StudentCreate | StudentUpdate, is_create: boo
     age = get_age(getattr(data, "birth_date", None))
     if age is not None and age < 18:
         if not getattr(data, "has_parent", False):
-            raise HTTPException(status_code=400, detail="Для несовершеннолетнего ученика нужно указать ответственное лицо")
+            raise HTTPException(
+                status_code=400,
+                detail="Для несовершеннолетнего ученика нужно указать ответственное лицо",
+            )
         if not getattr(data, "parent_name", None):
-            raise HTTPException(status_code=400, detail="Для несовершеннолетнего ученика нужно указать ФИО ответственного лица")
+            raise HTTPException(
+                status_code=400,
+                detail="Для несовершеннолетнего ученика нужно указать ФИО ответственного лица",
+            )
 
 
 def get_or_create_parent(
@@ -130,6 +164,28 @@ def get_student_or_404(db: Session, student_id: int) -> Student:
     )
     if not student:
         raise HTTPException(status_code=404, detail="Ученик не найден")
+    return student
+
+
+def ensure_student_access(db: Session, current_user: User, student_id: int) -> Student:
+    student = get_student_or_404(db, student_id)
+    teacher = get_teacher_for_current_user(db, current_user)
+
+    if teacher is None:
+        return student
+
+    is_accessible = (
+        db.query(LessonStudent.id)
+        .join(LessonStudent.lesson)
+        .join(Lesson.schedule)
+        .filter(LessonStudent.student_id == student_id)
+        .filter(ScheduleEvent.teacher_id == teacher.id)
+        .first()
+    )
+
+    if not is_accessible:
+        raise HTTPException(status_code=403, detail="У вас нет доступа к этому ученику")
+
     return student
 
 
@@ -206,6 +262,7 @@ def get_students(
     require_staff(current_user)
 
     query = db.query(Student).options(joinedload(Student.parent))
+    query = apply_teacher_student_scope(query, get_teacher_for_current_user(db, current_user))
 
     if status is not None:
         query = query.filter(Student.status == status)
@@ -222,8 +279,8 @@ def get_student(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    require_admin(current_user)
-    return serialize_student(get_student_or_404(db, student_id))
+    require_staff(current_user)
+    return serialize_student(ensure_student_access(db, current_user, student_id))
 
 
 @router.get("/students/{student_id}/history")
@@ -233,7 +290,7 @@ def get_student_history(
     db: Session = Depends(get_db),
 ):
     require_staff(current_user)
-    get_student_or_404(db, student_id)
+    ensure_student_access(db, current_user, student_id)
     return (
         db.query(EntityChangeLog)
         .filter(EntityChangeLog.entity == "student")
@@ -249,8 +306,8 @@ def get_student_subscriptions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    require_admin(current_user)
-    get_student_or_404(db, student_id)
+    require_staff(current_user)
+    ensure_student_access(db, current_user, student_id)
 
     subscriptions = (
         db.query(Subscription)
@@ -322,11 +379,12 @@ def update_student(
         if student.parent_id:
             existing_parent = db.query(Parent).filter(Parent.id == student.parent_id).first()
             if existing_parent:
+                changes["parent_name"] = (student.parent_name, parent_name)
+                changes["parent_phone"] = (existing_parent.phone, parent_phone)
                 existing_parent.full_name = parent_name
                 existing_parent.phone = parent_phone
                 if data.parent_telegram_id is not None:
                     existing_parent.telegram_id = data.parent_telegram_id
-                changes["parent_name"] = (student.parent_name, existing_parent.full_name)
                 student.parent_name = existing_parent.full_name
             else:
                 parent = get_or_create_parent(db, parent_name, parent_phone, parent_telegram_id)

@@ -1,10 +1,10 @@
 import React from 'react';
 import CalendarGrid from '../components/CalendarGrid';
 
-const SchedulePage = () => {
+const SchedulePage = ({ currentUser }) => {
   return (
     <div>
-      <CalendarGrid />
+      <CalendarGrid currentUser={currentUser} />
     </div>
   );
 };

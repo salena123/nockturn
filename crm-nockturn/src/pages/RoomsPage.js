@@ -1,41 +1,46 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import api from '../api';
+import useActionDialog from '../components/ui/useActionDialog';
 
 const RoomsPage = () => {
   const [rooms, setRooms] = useState([]);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const { dialog, showError, showSuccess } = useActionDialog();
 
-  const loadRooms = async () => {
+  const loadRooms = useCallback(async () => {
     try {
       const response = await api.get('/api/rooms/');
       setRooms(response.data);
     } catch (error) {
       console.error('Ошибка загрузки кабинетов:', error);
-      alert(error.response?.data?.detail || 'Не удалось загрузить кабинеты');
+      await showError(error.response?.data?.detail || 'Не удалось загрузить кабинеты');
     } finally {
       setLoading(false);
     }
-  };
+  }, [showError]);
 
   useEffect(() => {
     loadRooms();
-  }, []);
+  }, [loadRooms]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     const trimmedName = name.trim();
-    if (!trimmedName) return;
+    if (!trimmedName) {
+      return;
+    }
 
     try {
       setSubmitting(true);
       await api.post('/api/rooms/', null, { params: { name: trimmedName } });
       setName('');
       await loadRooms();
+      await showSuccess('Кабинет успешно создан.');
     } catch (error) {
       console.error('Ошибка создания кабинета:', error);
-      alert(error.response?.data?.detail || 'Не удалось создать кабинет');
+      await showError(error.response?.data?.detail || 'Не удалось создать кабинет');
     } finally {
       setSubmitting(false);
     }
@@ -51,7 +56,7 @@ const RoomsPage = () => {
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(event) => setName(event.target.value)}
             placeholder="Например, Кабинет 1"
           />
         </label>
@@ -80,6 +85,8 @@ const RoomsPage = () => {
           </tbody>
         </table>
       )}
+
+      {dialog}
     </div>
   );
 };

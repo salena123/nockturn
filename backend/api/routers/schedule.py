@@ -1,6 +1,10 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
+from io import BytesIO
+from xml.sax.saxutils import escape
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
 from core.deps import get_current_user, get_db
@@ -8,23 +12,93 @@ from models.lesson import Lesson
 from models.lessonIssue import LessonIssue
 from models.lessonStudent import LessonStudent
 from models.scheduleEvent import ScheduleEvent
+from models.scheduleHistory import ScheduleHistory
+from models.scheduleRecurring import ScheduleRecurring
 from models.student import Student
 from models.teacher import Teacher
 from models.user import User
 from schemas.schedule import (
     LessonCreate,
     LessonUpdate,
-    LessonWithDetails,
+    ScheduleEntryCreate,
     ScheduleEventCreate,
     ScheduleEventUpdate,
-    ScheduleEventWithDetails,
+    ScheduleRecurringRule,
 )
 
 router = APIRouter(prefix="/api/schedule")
 
+WORKDAY_START_HOUR = 9
+HOLIDAY_START_HOUR = 11
+WORKDAY_END_HOUR = 23
+LUNCH_BREAK_START = "13:00"
+LUNCH_BREAK_END = "15:00"
+MAX_RECURRING_OCCURRENCES = 366
+
 
 def format_conflict_time(start_time: datetime, end_time: datetime) -> str:
     return f"{start_time.strftime('%d.%m.%Y %H:%M')} - {end_time.strftime('%H:%M')}"
+
+
+def get_current_teacher(db: Session, current_user: User) -> Teacher | None:
+    if getattr(getattr(current_user, "role", None), "name", None) != "teacher":
+        return None
+    return db.query(Teacher).filter(Teacher.user_id == current_user.id).first()
+
+
+def ensure_teacher_can_manage_teacher(
+    db: Session,
+    current_user: User,
+    teacher_id: int,
+) -> None:
+    teacher = get_current_teacher(db, current_user)
+    if teacher and teacher.id != teacher_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Преподаватель может управлять только своим расписанием",
+        )
+
+
+def ensure_teacher_can_manage_event(
+    db: Session,
+    current_user: User,
+    event: ScheduleEvent,
+) -> None:
+    teacher = get_current_teacher(db, current_user)
+    if teacher and event.teacher_id != teacher.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Недостаточно прав для изменения этого занятия",
+        )
+
+
+def parse_iso_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Некорректная дата") from exc
+
+
+def get_range_for_view(start_date: str, view: str) -> tuple[datetime, datetime]:
+    base_date = parse_iso_date(start_date)
+
+    if view == "day":
+        range_start = datetime.combine(base_date, time.min)
+        range_end = range_start + timedelta(days=1)
+        return range_start, range_end
+
+    if view == "month":
+        range_start = datetime.combine(base_date.replace(day=1), time.min)
+        if range_start.month == 12:
+            next_month = range_start.replace(year=range_start.year + 1, month=1)
+        else:
+            next_month = range_start.replace(month=range_start.month + 1)
+        return range_start, next_month
+
+    monday = base_date - timedelta(days=base_date.weekday())
+    range_start = datetime.combine(monday, time.min)
+    range_end = range_start + timedelta(days=7)
+    return range_start, range_end
 
 
 def serialize_schedule_conflict(event: ScheduleEvent) -> dict:
@@ -73,8 +147,8 @@ def build_schedule_conflicts(db: Session, event_data: dict, exclude_id: int | No
         .filter(ScheduleEvent.start_time < event_data["end_time"])
         .filter(ScheduleEvent.end_time > event_data["start_time"])
         .filter(
-            (ScheduleEvent.teacher_id == event_data["teacher_id"]) |
-            (ScheduleEvent.room_id == event_data["room_id"])
+            (ScheduleEvent.teacher_id == event_data["teacher_id"])
+            | (ScheduleEvent.room_id == event_data["room_id"])
         )
     )
 
@@ -83,41 +157,18 @@ def build_schedule_conflicts(db: Session, event_data: dict, exclude_id: int | No
 
     conflicts = query.all()
 
-    teacher_conflicts = [
-        serialize_schedule_conflict(event)
-        for event in conflicts
-        if event.teacher_id == event_data["teacher_id"]
-    ]
-    room_conflicts = [
-        serialize_schedule_conflict(event)
-        for event in conflicts
-        if event.room_id == event_data["room_id"]
-    ]
-
     return {
-        "teacher_conflicts": teacher_conflicts,
-        "room_conflicts": room_conflicts,
+        "teacher_conflicts": [
+            serialize_schedule_conflict(event)
+            for event in conflicts
+            if event.teacher_id == event_data["teacher_id"]
+        ],
+        "room_conflicts": [
+            serialize_schedule_conflict(event)
+            for event in conflicts
+            if event.room_id == event_data["room_id"]
+        ],
     }
-
-
-def raise_schedule_conflicts_if_needed(conflicts: dict) -> None:
-    teacher_conflicts = conflicts["teacher_conflicts"]
-    room_conflicts = conflicts["room_conflicts"]
-
-    if not teacher_conflicts and not room_conflicts:
-        return
-
-    messages = []
-    if teacher_conflicts:
-        messages.append("Преподаватель уже занят в это время.")
-    if room_conflicts:
-        messages.append("Кабинет уже занят в это время.")
-
-    raise_detailed_conflict(
-        " ".join(messages) or "Обнаружены конфликты расписания.",
-        teacher_conflicts=teacher_conflicts,
-        room_conflicts=room_conflicts,
-    )
 
 
 def build_student_conflicts(
@@ -189,45 +240,221 @@ def build_student_conflicts(
     return conflicts
 
 
-def raise_student_conflicts_if_needed(conflicts: list[dict]) -> None:
-    if not conflicts:
+def validate_recurrence(recurrence: ScheduleRecurringRule, start_time: datetime) -> None:
+    if recurrence.repeat_type == "none":
         return
 
-    raise_detailed_conflict(
-        "У одного или нескольких учеников уже есть занятие в это время.",
-        student_conflicts=conflicts,
+    if recurrence.repeat_until is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Для повторяющихся занятий нужно указать дату окончания повторений",
+        )
+
+    if recurrence.repeat_until < start_time.date():
+        raise HTTPException(
+            status_code=400,
+            detail="Дата окончания повторений не может быть раньше первого занятия",
+        )
+
+    if recurrence.repeat_type == "weekdays":
+        invalid_values = [value for value in recurrence.weekdays if value < 0 or value > 6]
+        if invalid_values:
+            raise HTTPException(
+                status_code=400,
+                detail="Дни недели должны быть в диапазоне от 0 до 6",
+            )
+        if not recurrence.weekdays:
+            raise HTTPException(
+                status_code=400,
+                detail="Для повторения по выбранным дням недели нужно указать хотя бы один день",
+            )
+
+
+def generate_occurrence_starts(
+    start_time: datetime,
+    recurrence: ScheduleRecurringRule,
+) -> list[datetime]:
+    validate_recurrence(recurrence, start_time)
+
+    if recurrence.repeat_type == "none":
+        return [start_time]
+
+    repeat_until = recurrence.repeat_until
+    assert repeat_until is not None
+
+    occurrences: list[datetime] = []
+    current = start_time
+
+    if recurrence.repeat_type == "weekly":
+        while current.date() <= repeat_until:
+            occurrences.append(current)
+            current = current + timedelta(days=7)
+    elif recurrence.repeat_type == "daily":
+        while current.date() <= repeat_until:
+            occurrences.append(current)
+            current = current + timedelta(days=1)
+    else:
+        allowed_weekdays = set(recurrence.weekdays)
+        while current.date() <= repeat_until:
+            if current.weekday() in allowed_weekdays:
+                occurrences.append(current)
+            current = current + timedelta(days=1)
+
+    if len(occurrences) > MAX_RECURRING_OCCURRENCES:
+        raise HTTPException(
+            status_code=400,
+            detail="Слишком много повторений. Уменьшите период серии",
+        )
+
+    return occurrences
+
+
+def serialize_recurring(event: ScheduleEvent) -> dict | None:
+    recurring = event.recurring[0] if getattr(event, "recurring", None) else None
+    if not recurring:
+        return None
+    return {
+        "id": recurring.id,
+        "repeat_type": recurring.repeat_type,
+        "repeat_until": recurring.repeat_until,
+    }
+
+
+def serialize_calendar_event(db: Session, event: ScheduleEvent) -> dict:
+    lesson_data = None
+    if event.lessons:
+        lesson = event.lessons[0]
+        lesson_data = {
+            "id": lesson.id,
+            "lesson_date": lesson.lesson_date,
+            "lesson_type": lesson.lesson_type,
+            "max_students": lesson.max_students,
+            "students": [
+                {"id": link.student.id, "name": link.student.fio}
+                for link in lesson.lesson_students
+                if link.student
+            ],
+        }
+
+    conflicts = build_schedule_conflicts(
+        db,
+        {
+            "teacher_id": event.teacher_id,
+            "discipline_id": event.discipline_id,
+            "room_id": event.room_id,
+            "start_time": event.start_time,
+            "end_time": event.end_time,
+        },
+        exclude_id=event.id,
     )
 
+    return {
+        "id": event.id,
+        "teacher_id": event.teacher_id,
+        "discipline_id": event.discipline_id,
+        "room_id": event.room_id,
+        "start_time": event.start_time,
+        "end_time": event.end_time,
+        "type": event.type,
+        "created_at": event.created_at,
+        "teacher": {
+            "id": event.teacher.id,
+            "user_id": event.teacher.user_id,
+            "specialization": event.teacher.specialization,
+            "full_name": event.teacher.user.full_name if event.teacher and event.teacher.user else None,
+        }
+        if event.teacher
+        else None,
+        "discipline": {
+            "id": event.discipline.id,
+            "name": event.discipline.name,
+        }
+        if event.discipline
+        else None,
+        "room": {
+            "id": event.room.id,
+            "name": event.room.name,
+        }
+        if event.room
+        else None,
+        "lesson": lesson_data,
+        "recurring": serialize_recurring(event),
+        "has_conflict": bool(conflicts["teacher_conflicts"] or conflicts["room_conflicts"]),
+        "conflicts": conflicts,
+    }
 
-def validate_students_for_lesson(
-    db: Session,
-    lesson: Lesson,
-    student_ids: list[int],
-    *,
-    require_student_for_individual: bool = True,
-) -> list[int]:
+
+def serialize_lesson_with_details(db: Session, lesson: Lesson) -> dict:
+    schedule = lesson.schedule
+    teacher = schedule.teacher if schedule else None
+    teacher_user = teacher.user if teacher else None
+
+    return {
+        "id": lesson.id,
+        "schedule_id": lesson.schedule_id,
+        "lesson_date": lesson.lesson_date,
+        "status": lesson.status,
+        "lesson_type": lesson.lesson_type,
+        "max_students": lesson.max_students,
+        "created_at": lesson.created_at,
+        "schedule": serialize_calendar_event(db, schedule) if schedule else None,
+        "students": [
+            {
+                "id": link.student.id,
+                "fio": link.student.fio,
+                "phone": link.student.phone,
+                "status": link.student.status,
+            }
+            for link in lesson.lesson_students
+            if link.student
+        ],
+        "issues": [
+            {
+                "id": issue.id,
+                "description": issue.description,
+                "created_at": issue.created_at,
+            }
+            for issue in lesson.issues
+        ],
+        "teacher_name": (teacher_user.full_name or teacher_user.login) if teacher_user else None,
+    }
+
+
+def normalize_student_ids(student_ids: list[int]) -> list[int]:
     normalized_ids: list[int] = []
     seen_ids: set[int] = set()
-
     for student_id in student_ids:
         if student_id is None or student_id in seen_ids:
             continue
         seen_ids.add(student_id)
         normalized_ids.append(student_id)
+    return normalized_ids
 
-    if lesson.lesson_type == "individual" and len(normalized_ids) > 1:
+
+def validate_students_for_lesson(
+    db: Session,
+    lesson_type: str,
+    max_students: int,
+    student_ids: list[int],
+    schedule_id: int,
+    lesson_id: int | None = None,
+    require_student_for_individual: bool = True,
+) -> list[int]:
+    normalized_ids = normalize_student_ids(student_ids)
+
+    if lesson_type == "individual" and len(normalized_ids) > 1:
         raise HTTPException(
             status_code=400,
             detail="Для индивидуального занятия можно выбрать только одного ученика",
         )
 
-    if lesson.lesson_type == "individual" and require_student_for_individual and not normalized_ids:
+    if lesson_type == "individual" and require_student_for_individual and not normalized_ids:
         raise HTTPException(
             status_code=400,
             detail="Для индивидуального занятия нужно выбрать ученика",
         )
 
-    if lesson.lesson_type == "group" and lesson.max_students and len(normalized_ids) > lesson.max_students:
+    if lesson_type == "group" and max_students and len(normalized_ids) > max_students:
         raise HTTPException(
             status_code=400,
             detail="Количество выбранных учеников превышает лимит группы",
@@ -246,7 +473,7 @@ def validate_students_for_lesson(
             detail=f"Ученики не найдены: {', '.join(str(student_id) for student_id in missing_ids)}",
         )
 
-    schedule = db.query(ScheduleEvent).filter(ScheduleEvent.id == lesson.schedule_id).first()
+    schedule = db.query(ScheduleEvent).filter(ScheduleEvent.id == schedule_id).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Событие расписания для урока не найдено")
 
@@ -255,15 +482,26 @@ def validate_students_for_lesson(
         normalized_ids,
         schedule.start_time,
         schedule.end_time,
-        exclude_lesson_id=lesson.id,
+        exclude_lesson_id=lesson_id,
     )
-    raise_student_conflicts_if_needed(student_conflicts)
+    if student_conflicts:
+        raise_detailed_conflict(
+            "У одного или нескольких учеников уже есть занятие в это время.",
+            student_conflicts=student_conflicts,
+        )
 
     return normalized_ids
 
 
 def sync_lesson_students(db: Session, lesson: Lesson, student_ids: list[int]) -> None:
-    normalized_ids = validate_students_for_lesson(db, lesson, student_ids)
+    normalized_ids = validate_students_for_lesson(
+        db,
+        lesson.lesson_type,
+        lesson.max_students,
+        student_ids,
+        lesson.schedule_id,
+        lesson.id,
+    )
 
     current_links = db.query(LessonStudent).filter(LessonStudent.lesson_id == lesson.id).all()
     current_ids = {link.student_id for link in current_links}
@@ -287,8 +525,9 @@ def validate_event_student_conflicts_on_update(
     db: Session,
     event: ScheduleEvent,
     update_data: dict,
+    ignore_conflicts: bool,
 ) -> None:
-    if not event.lessons:
+    if ignore_conflicts or not event.lessons:
         return
 
     lesson = event.lessons[0]
@@ -298,7 +537,6 @@ def validate_event_student_conflicts_on_update(
 
     new_start = update_data.get("start_time", event.start_time)
     new_end = update_data.get("end_time", event.end_time)
-
     student_conflicts = build_student_conflicts(
         db,
         student_ids,
@@ -306,149 +544,356 @@ def validate_event_student_conflicts_on_update(
         new_end,
         exclude_lesson_id=lesson.id,
     )
-    raise_student_conflicts_if_needed(student_conflicts)
+    if student_conflicts:
+        raise_detailed_conflict(
+            "У одного или нескольких учеников уже есть занятие в это время.",
+            student_conflicts=student_conflicts,
+        )
+
+
+def create_schedule_history_record(
+    db: Session,
+    schedule_id: int,
+    changed_by: int,
+    old_start: datetime,
+    new_start: datetime,
+) -> None:
+    db.add(
+        ScheduleHistory(
+            schedule_id=schedule_id,
+            changed_by=changed_by,
+            old_start=old_start,
+            new_start=new_start,
+            changed_at=datetime.utcnow(),
+        )
+    )
+
+
+def build_event_payloads_for_series(
+    data: ScheduleEntryCreate,
+) -> list[dict]:
+    recurrence = data.recurrence or ScheduleRecurringRule()
+    start_times = generate_occurrence_starts(data.start_time, recurrence)
+    duration = data.end_time - data.start_time
+
+    return [
+        {
+            "teacher_id": data.teacher_id,
+            "discipline_id": data.discipline_id,
+            "room_id": data.room_id,
+            "start_time": occurrence_start,
+            "end_time": occurrence_start + duration,
+            "type": data.type,
+        }
+        for occurrence_start in start_times
+    ]
+
+
+def create_schedule_entry_series(
+    db: Session,
+    current_user: User,
+    data: ScheduleEntryCreate,
+) -> list[ScheduleEvent]:
+    ensure_teacher_can_manage_teacher(db, current_user, data.teacher_id)
+
+    created_events: list[ScheduleEvent] = []
+    event_payloads = build_event_payloads_for_series(data)
+
+    for payload in event_payloads:
+        conflicts = build_schedule_conflicts(db, payload)
+        student_conflicts = build_student_conflicts(
+            db,
+            normalize_student_ids(data.student_ids),
+            payload["start_time"],
+            payload["end_time"],
+        )
+
+        if not data.ignore_conflicts and (
+            conflicts["teacher_conflicts"]
+            or conflicts["room_conflicts"]
+            or student_conflicts
+        ):
+            raise_detailed_conflict(
+                "Обнаружены конфликты расписания.",
+                teacher_conflicts=conflicts["teacher_conflicts"],
+                room_conflicts=conflicts["room_conflicts"],
+                student_conflicts=student_conflicts,
+            )
+
+        db_event = ScheduleEvent(**payload)
+        db.add(db_event)
+        db.flush()
+
+        db_lesson = Lesson(
+            schedule_id=db_event.id,
+            lesson_date=payload["start_time"].date(),
+            status="planned",
+            lesson_type=data.lesson_type,
+            max_students=data.max_students,
+        )
+        db.add(db_lesson)
+        db.flush()
+
+        normalized_ids = validate_students_for_lesson(
+            db,
+            data.lesson_type,
+            data.max_students,
+            data.student_ids,
+            db_event.id,
+            db_lesson.id,
+        )
+        for student_id in normalized_ids:
+            db.add(
+                LessonStudent(
+                    lesson_id=db_lesson.id,
+                    student_id=student_id,
+                    enrolled_at=datetime.utcnow(),
+                )
+            )
+
+        recurrence = data.recurrence or ScheduleRecurringRule()
+        if recurrence.repeat_type != "none":
+            db.add(
+                ScheduleRecurring(
+                    schedule_id=db_event.id,
+                    repeat_type=recurrence.repeat_type,
+                    repeat_until=recurrence.repeat_until,
+                )
+            )
+
+        created_events.append(db_event)
+
+    db.commit()
+    for event in created_events:
+        db.refresh(event)
+    return created_events
+
+
+def get_scoped_events_query(
+    db: Session,
+    current_user: User,
+):
+    query = db.query(ScheduleEvent).options(
+        joinedload(ScheduleEvent.teacher).joinedload(Teacher.user),
+        joinedload(ScheduleEvent.discipline),
+        joinedload(ScheduleEvent.room),
+        joinedload(ScheduleEvent.lessons)
+        .joinedload(Lesson.lesson_students)
+        .joinedload(LessonStudent.student),
+        joinedload(ScheduleEvent.recurring),
+    )
+
+    teacher = get_current_teacher(db, current_user)
+    if teacher:
+        query = query.filter(ScheduleEvent.teacher_id == teacher.id)
+
+    return query
+
+
+def get_events_for_range(
+    db: Session,
+    current_user: User,
+    start_date: str,
+    view: str,
+    teacher_id: int | None,
+    room_id: int | None,
+) -> list[ScheduleEvent]:
+    range_start, range_end = get_range_for_view(start_date, view)
+    query = get_scoped_events_query(db, current_user)
+    query = query.filter(ScheduleEvent.start_time < range_end).filter(ScheduleEvent.end_time > range_start)
+
+    if teacher_id:
+        query = query.filter(ScheduleEvent.teacher_id == teacher_id)
+    if room_id:
+        query = query.filter(ScheduleEvent.room_id == room_id)
+
+    return query.order_by(ScheduleEvent.start_time, ScheduleEvent.id).all()
+
+
+def build_ics_text(events: list[dict]) -> str:
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Nockturn CRM//Schedule//RU",
+        "CALSCALE:GREGORIAN",
+    ]
+    now_stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+    for event in events:
+        start_time = event["start_time"].strftime("%Y%m%dT%H%M%S")
+        end_time = event["end_time"].strftime("%Y%m%dT%H%M%S")
+        teacher_name = event["teacher"]["full_name"] if event.get("teacher") else ""
+        discipline_name = event["discipline"]["name"] if event.get("discipline") else "Занятие"
+        room_name = event["room"]["name"] if event.get("room") else ""
+        student_names = ", ".join(student["name"] for student in event.get("lesson", {}).get("students", []))
+
+        description_parts = [
+            f"Тип: {event.get('type') or 'lesson'}",
+            f"Преподаватель: {teacher_name or '—'}",
+            f"Кабинет: {room_name or '—'}",
+        ]
+        if student_names:
+            description_parts.append(f"Ученики: {student_names}")
+
+        lines.extend(
+            [
+                "BEGIN:VEVENT",
+                f"UID:schedule-{event['id']}@nockturn",
+                f"DTSTAMP:{now_stamp}",
+                f"DTSTART:{start_time}",
+                f"DTEND:{end_time}",
+                f"SUMMARY:{discipline_name}",
+                f"LOCATION:{room_name}",
+                f"DESCRIPTION:{' | '.join(description_parts)}",
+                "END:VEVENT",
+            ]
+        )
+
+    lines.append("END:VCALENDAR")
+    return "\r\n".join(lines)
+
+
+def build_xlsx_bytes(rows: list[list[str | int | float]]) -> bytes:
+    content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>"""
+
+    rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>"""
+
+    workbook = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Расписание" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>"""
+
+    workbook_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"""
+
+    styles = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>"""
+
+    app = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>Nockturn CRM</Application>
+</Properties>"""
+
+    created = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    core = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+ xmlns:dc="http://purl.org/dc/elements/1.1/"
+ xmlns:dcterms="http://purl.org/dc/terms/"
+ xmlns:dcmitype="http://purl.org/dc/dcmitype/"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:creator>Nockturn CRM</dc:creator>
+  <cp:lastModifiedBy>Nockturn CRM</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">{created}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">{created}</dcterms:modified>
+</cp:coreProperties>"""
+
+    def column_name(index: int) -> str:
+        result = ""
+        current = index
+        while current >= 0:
+            result = chr(current % 26 + 65) + result
+            current = current // 26 - 1
+        return result
+
+    sheet_rows: list[str] = []
+    for row_index, row in enumerate(rows, start=1):
+        cells: list[str] = []
+        for column_index, value in enumerate(row):
+            cell_ref = f"{column_name(column_index)}{row_index}"
+            value_str = escape("" if value is None else str(value))
+            cells.append(
+                f'<c r="{cell_ref}" t="inlineStr"><is><t>{value_str}</t></is></c>'
+            )
+        sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+
+    worksheet = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    {''.join(sheet_rows)}
+  </sheetData>
+</worksheet>"""
+
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", ZIP_DEFLATED) as zip_file:
+        zip_file.writestr("[Content_Types].xml", content_types)
+        zip_file.writestr("_rels/.rels", rels)
+        zip_file.writestr("docProps/app.xml", app)
+        zip_file.writestr("docProps/core.xml", core)
+        zip_file.writestr("xl/workbook.xml", workbook)
+        zip_file.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        zip_file.writestr("xl/styles.xml", styles)
+        zip_file.writestr("xl/worksheets/sheet1.xml", worksheet)
+
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 @router.get("/events")
 def get_schedule_events(
-    start_date: str = None,
-    end_date: str = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    teacher_id: int | None = None,
+    room_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = (
-        db.query(ScheduleEvent)
-        .options(
-            joinedload(ScheduleEvent.teacher),
-            joinedload(ScheduleEvent.discipline),
-            joinedload(ScheduleEvent.room),
-        )
-    )
+    query = get_scoped_events_query(db, current_user)
 
     if start_date:
-        start_dt = datetime.fromisoformat(start_date)
-        query = query.filter(ScheduleEvent.start_time >= start_dt)
-
+        query = query.filter(ScheduleEvent.start_time >= datetime.fromisoformat(start_date))
     if end_date:
-        end_dt = datetime.fromisoformat(end_date)
-        query = query.filter(ScheduleEvent.end_time <= end_dt)
+        query = query.filter(ScheduleEvent.end_time <= datetime.fromisoformat(end_date))
+    if teacher_id:
+        query = query.filter(ScheduleEvent.teacher_id == teacher_id)
+    if room_id:
+        query = query.filter(ScheduleEvent.room_id == room_id)
 
-    events = query.all()
-
-    result = []
-    for event in events:
-        result.append(
-            {
-                "id": event.id,
-                "teacher_id": event.teacher_id,
-                "discipline_id": event.discipline_id,
-                "room_id": event.room_id,
-                "start_time": event.start_time,
-                "end_time": event.end_time,
-                "type": event.type,
-                "created_at": event.created_at,
-                "teacher": {
-                    "id": event.teacher.id,
-                    "user_id": event.teacher.user_id,
-                    "specialization": event.teacher.specialization,
-                }
-                if event.teacher
-                else None,
-                "discipline": {
-                    "id": event.discipline.id,
-                    "name": event.discipline.name,
-                }
-                if event.discipline
-                else None,
-                "room": {
-                    "id": event.room.id,
-                    "name": event.room.name,
-                }
-                if event.room
-                else None,
-            }
-        )
-
-    return result
+    events = query.order_by(ScheduleEvent.start_time, ScheduleEvent.id).all()
+    return [serialize_calendar_event(db, event) for event in events]
 
 
 @router.get("/calendar")
 def get_calendar_events(
     start_date: str,
+    view: str = "week",
+    teacher_id: int | None = None,
+    room_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    start_dt = datetime.fromisoformat(start_date)
-    end_dt = start_dt + timedelta(days=7)
-
-    events = (
-        db.query(ScheduleEvent)
-        .options(
-            joinedload(ScheduleEvent.teacher),
-            joinedload(ScheduleEvent.discipline),
-            joinedload(ScheduleEvent.room),
-            joinedload(ScheduleEvent.lessons)
-            .joinedload(Lesson.lesson_students)
-            .joinedload(LessonStudent.student),
-        )
-        .filter(ScheduleEvent.start_time >= start_dt)
-        .filter(ScheduleEvent.start_time < end_dt)
-        .all()
-    )
-
-    result = []
-    for event in events:
-        lesson_data = None
-        if event.lessons:
-            lesson = event.lessons[0]
-            lesson_data = {
-                "id": lesson.id,
-                "lesson_type": lesson.lesson_type,
-                "max_students": lesson.max_students,
-                "students": [
-                    {
-                        "id": link.student.id,
-                        "name": link.student.fio,
-                    }
-                    for link in lesson.lesson_students
-                    if link.student
-                ],
-            }
-
-        result.append(
-            {
-                "id": event.id,
-                "teacher_id": event.teacher_id,
-                "discipline_id": event.discipline_id,
-                "room_id": event.room_id,
-                "start_time": event.start_time,
-                "end_time": event.end_time,
-                "type": event.type,
-                "created_at": event.created_at,
-                "teacher": {
-                    "id": event.teacher.id,
-                    "user_id": event.teacher.user_id,
-                    "specialization": event.teacher.specialization,
-                }
-                if event.teacher
-                else None,
-                "discipline": {
-                    "id": event.discipline.id,
-                    "name": event.discipline.name,
-                }
-                if event.discipline
-                else None,
-                "room": {
-                    "id": event.room.id,
-                    "name": event.room.name,
-                }
-                if event.room
-                else None,
-                "lesson": lesson_data,
-            }
-        )
-
-    return result
+    events = get_events_for_range(db, current_user, start_date, view, teacher_id, room_id)
+    return [serialize_calendar_event(db, event) for event in events]
 
 
 @router.get("/events/{event_id}")
@@ -458,48 +903,13 @@ def get_schedule_event(
     current_user: User = Depends(get_current_user),
 ):
     event = (
-        db.query(ScheduleEvent)
-        .options(
-            joinedload(ScheduleEvent.teacher),
-            joinedload(ScheduleEvent.discipline),
-            joinedload(ScheduleEvent.room),
-        )
+        get_scoped_events_query(db, current_user)
         .filter(ScheduleEvent.id == event_id)
         .first()
     )
-
     if not event:
         raise HTTPException(status_code=404, detail="Событие расписания не найдено")
-
-    return {
-        "id": event.id,
-        "teacher_id": event.teacher_id,
-        "discipline_id": event.discipline_id,
-        "room_id": event.room_id,
-        "start_time": event.start_time,
-        "end_time": event.end_time,
-        "type": event.type,
-        "created_at": event.created_at,
-        "teacher": {
-            "id": event.teacher.id,
-            "user_id": event.teacher.user_id,
-            "specialization": event.teacher.specialization,
-        }
-        if event.teacher
-        else None,
-        "discipline": {
-            "id": event.discipline.id,
-            "name": event.discipline.name,
-        }
-        if event.discipline
-        else None,
-        "room": {
-            "id": event.room.id,
-            "name": event.room.name,
-        }
-        if event.room
-        else None,
-    }
+    return serialize_calendar_event(db, event)
 
 
 @router.post("/events")
@@ -508,15 +918,40 @@ def create_schedule_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    conflicts = build_schedule_conflicts(db, event_data.dict())
-    raise_schedule_conflicts_if_needed(conflicts)
+    ensure_teacher_can_manage_teacher(db, current_user, event_data.teacher_id)
 
-    db_event = ScheduleEvent(**event_data.dict())
+    payload = event_data.model_dump(exclude={"ignore_conflicts"})
+    conflicts = build_schedule_conflicts(db, payload)
+    if not event_data.ignore_conflicts and (conflicts["teacher_conflicts"] or conflicts["room_conflicts"]):
+        raise_detailed_conflict(
+            "Обнаружены конфликты расписания.",
+            teacher_conflicts=conflicts["teacher_conflicts"],
+            room_conflicts=conflicts["room_conflicts"],
+        )
+
+    db_event = ScheduleEvent(**payload)
     db.add(db_event)
     db.commit()
     db.refresh(db_event)
-
     return db_event
+
+
+@router.post("/entries")
+def create_schedule_entries(
+    payload: ScheduleEntryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    created_events = create_schedule_entry_series(db, current_user, payload)
+    events = (
+        get_scoped_events_query(db, current_user)
+        .filter(ScheduleEvent.id.in_([event.id for event in created_events]))
+        .all()
+    )
+    return {
+        "count": len(events),
+        "events": [serialize_calendar_event(db, event) for event in events],
+    }
 
 
 @router.put("/events/{event_id}")
@@ -527,28 +962,54 @@ def update_schedule_event(
     current_user: User = Depends(get_current_user),
 ):
     db_event = (
-        db.query(ScheduleEvent)
-        .options(
-            joinedload(ScheduleEvent.lessons).joinedload(Lesson.lesson_students),
-        )
+        get_scoped_events_query(db, current_user)
         .filter(ScheduleEvent.id == event_id)
         .first()
     )
     if not db_event:
         raise HTTPException(status_code=404, detail="Событие расписания не найдено")
 
-    update_data = event_data.dict(exclude_unset=True)
-    if update_data:
-        conflicts = build_schedule_conflicts(db, {**db_event.__dict__, **update_data}, event_id)
-        raise_schedule_conflicts_if_needed(conflicts)
-        validate_event_student_conflicts_on_update(db, db_event, update_data)
+    ensure_teacher_can_manage_event(db, current_user, db_event)
 
+    update_data = event_data.model_dump(exclude_unset=True, exclude={"ignore_conflicts"})
+    ignore_conflicts = event_data.ignore_conflicts
+    if update_data:
+        merged_data = {
+            "teacher_id": update_data.get("teacher_id", db_event.teacher_id),
+            "discipline_id": update_data.get("discipline_id", db_event.discipline_id),
+            "room_id": update_data.get("room_id", db_event.room_id),
+            "start_time": update_data.get("start_time", db_event.start_time),
+            "end_time": update_data.get("end_time", db_event.end_time),
+            "type": update_data.get("type", db_event.type),
+        }
+        conflicts = build_schedule_conflicts(db, merged_data, event_id)
+        if not ignore_conflicts and (conflicts["teacher_conflicts"] or conflicts["room_conflicts"]):
+            raise_detailed_conflict(
+                "Обнаружены конфликты расписания.",
+                teacher_conflicts=conflicts["teacher_conflicts"],
+                room_conflicts=conflicts["room_conflicts"],
+            )
+        validate_event_student_conflicts_on_update(db, db_event, update_data, ignore_conflicts)
+
+    old_start = db_event.start_time
     for field, value in update_data.items():
         setattr(db_event, field, value)
 
+    if "start_time" in update_data and db_event.lessons:
+        for lesson in db_event.lessons:
+            lesson.lesson_date = db_event.start_time.date()
+
+    if update_data:
+        create_schedule_history_record(
+            db,
+            db_event.id,
+            current_user.id,
+            old_start,
+            db_event.start_time,
+        )
+
     db.commit()
     db.refresh(db_event)
-
     return db_event
 
 
@@ -562,16 +1023,169 @@ def delete_schedule_event(
     if not db_event:
         raise HTTPException(status_code=404, detail="Событие расписания не найдено")
 
+    ensure_teacher_can_manage_event(db, current_user, db_event)
+
     lessons = db.query(Lesson).filter(Lesson.schedule_id == event_id).all()
     for lesson in lessons:
         db.query(LessonStudent).filter(LessonStudent.lesson_id == lesson.id).delete()
         db.query(LessonIssue).filter(LessonIssue.lesson_id == lesson.id).delete()
         db.delete(lesson)
 
+    db.query(ScheduleRecurring).filter(ScheduleRecurring.schedule_id == event_id).delete()
     db.delete(db_event)
     db.commit()
-
     return {"message": "Событие расписания удалено"}
+
+
+@router.get("/history")
+def get_schedule_history(
+    event_id: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = (
+        db.query(ScheduleHistory)
+        .options(
+            joinedload(ScheduleHistory.schedule)
+            .joinedload(ScheduleEvent.teacher)
+            .joinedload(Teacher.user),
+            joinedload(ScheduleHistory.schedule).joinedload(ScheduleEvent.room),
+            joinedload(ScheduleHistory.schedule).joinedload(ScheduleEvent.discipline),
+            joinedload(ScheduleHistory.changed_by_user),
+        )
+    )
+
+    if event_id:
+        query = query.filter(ScheduleHistory.schedule_id == event_id)
+    if start_date:
+        query = query.filter(ScheduleHistory.changed_at >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.filter(ScheduleHistory.changed_at <= datetime.fromisoformat(end_date))
+
+    teacher = get_current_teacher(db, current_user)
+    if teacher:
+        query = query.join(ScheduleHistory.schedule).filter(ScheduleEvent.teacher_id == teacher.id)
+
+    history_records = query.order_by(ScheduleHistory.changed_at.desc(), ScheduleHistory.id.desc()).all()
+
+    return [
+        {
+            "id": record.id,
+            "schedule_id": record.schedule_id,
+            "changed_at": record.changed_at,
+            "old_start": record.old_start,
+            "new_start": record.new_start,
+            "changed_by": {
+                "id": record.changed_by_user.id,
+                "full_name": record.changed_by_user.full_name,
+                "login": record.changed_by_user.login,
+            }
+            if record.changed_by_user
+            else None,
+            "teacher_name": record.schedule.teacher.user.full_name
+            if record.schedule and record.schedule.teacher and record.schedule.teacher.user
+            else None,
+            "discipline_name": record.schedule.discipline.name
+            if record.schedule and record.schedule.discipline
+            else None,
+            "room_name": record.schedule.room.name
+            if record.schedule and record.schedule.room
+            else None,
+        }
+        for record in history_records
+    ]
+
+
+@router.get("/non-working-periods")
+def get_non_working_periods(
+    current_user: User = Depends(get_current_user),
+):
+    return {
+        "workday_start_hour": WORKDAY_START_HOUR,
+        "holiday_start_hour": HOLIDAY_START_HOUR,
+        "workday_end_hour": WORKDAY_END_HOUR,
+        "lunch_breaks": [
+            {
+                "name": "Дневной перерыв",
+                "start_time": LUNCH_BREAK_START,
+                "end_time": LUNCH_BREAK_END,
+                "weekdays": [0, 1, 2, 3, 4, 5],
+            }
+        ],
+        "weekends": [6],
+    }
+
+
+@router.get("/export/ics")
+def export_schedule_ics(
+    start_date: str,
+    view: str = "week",
+    teacher_id: int | None = None,
+    room_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    events = get_events_for_range(db, current_user, start_date, view, teacher_id, room_id)
+    serialized = [serialize_calendar_event(db, event) for event in events]
+    content = build_ics_text(serialized)
+    buffer = BytesIO(content.encode("utf-8"))
+    return StreamingResponse(
+        buffer,
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="schedule.ics"'},
+    )
+
+
+@router.get("/export/xlsx")
+def export_schedule_xlsx(
+    start_date: str,
+    view: str = "week",
+    teacher_id: int | None = None,
+    room_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    events = get_events_for_range(db, current_user, start_date, view, teacher_id, room_id)
+    serialized = [serialize_calendar_event(db, event) for event in events]
+    rows: list[list[str]] = [[
+        "Дата",
+        "Начало",
+        "Окончание",
+        "Тип",
+        "Преподаватель",
+        "Дисциплина",
+        "Кабинет",
+        "Ученики",
+        "Повторяемость",
+        "Есть конфликт",
+    ]]
+
+    for event in serialized:
+        recurring = event.get("recurring") or {}
+        students = ", ".join(student["name"] for student in event.get("lesson", {}).get("students", []))
+        rows.append(
+            [
+                event["start_time"].strftime("%d.%m.%Y"),
+                event["start_time"].strftime("%H:%M"),
+                event["end_time"].strftime("%H:%M"),
+                str(event.get("type") or ""),
+                event["teacher"]["full_name"] if event.get("teacher") else "",
+                event["discipline"]["name"] if event.get("discipline") else "",
+                event["room"]["name"] if event.get("room") else "",
+                students,
+                recurring.get("repeat_type") or "нет",
+                "да" if event.get("has_conflict") else "нет",
+            ]
+        )
+
+    output = BytesIO(build_xlsx_bytes(rows))
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="schedule.xlsx"'},
+    )
 
 
 @router.get("/lessons")
@@ -579,7 +1193,26 @@ def get_lessons(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.query(Lesson).options(joinedload(Lesson.schedule)).all()
+    query = (
+        db.query(Lesson)
+        .options(
+            joinedload(Lesson.schedule)
+            .joinedload(ScheduleEvent.teacher)
+            .joinedload(Teacher.user),
+            joinedload(Lesson.schedule).joinedload(ScheduleEvent.discipline),
+            joinedload(Lesson.schedule).joinedload(ScheduleEvent.room),
+            joinedload(Lesson.schedule).joinedload(ScheduleEvent.recurring),
+            joinedload(Lesson.lesson_students).joinedload(LessonStudent.student),
+            joinedload(Lesson.issues),
+        )
+    )
+
+    teacher = get_current_teacher(db, current_user)
+    if teacher:
+        query = query.join(Lesson.schedule).filter(ScheduleEvent.teacher_id == teacher.id)
+
+    lessons = query.order_by(Lesson.lesson_date.desc(), Lesson.id.desc()).all()
+    return [serialize_lesson_with_details(db, lesson) for lesson in lessons]
 
 
 @router.post("/lessons")
@@ -588,7 +1221,13 @@ def create_lesson(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    lesson_dict = lesson_data.dict()
+    schedule = db.query(ScheduleEvent).filter(ScheduleEvent.id == lesson_data.schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Событие расписания не найдено")
+
+    ensure_teacher_can_manage_event(db, current_user, schedule)
+
+    lesson_dict = lesson_data.model_dump()
     student_ids = lesson_dict.pop("student_ids", [])
 
     db_lesson = Lesson(**lesson_dict)
@@ -597,7 +1236,6 @@ def create_lesson(
     sync_lesson_students(db, db_lesson, student_ids)
     db.commit()
     db.refresh(db_lesson)
-
     return db_lesson
 
 
@@ -608,11 +1246,13 @@ def update_lesson(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    db_lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    db_lesson = db.query(Lesson).options(joinedload(Lesson.schedule)).filter(Lesson.id == lesson_id).first()
     if not db_lesson:
         raise HTTPException(status_code=404, detail="Занятие не найдено")
 
-    update_data = lesson_data.dict(exclude_unset=True)
+    ensure_teacher_can_manage_event(db, current_user, db_lesson.schedule)
+
+    update_data = lesson_data.model_dump(exclude_unset=True)
     student_ids = update_data.pop("student_ids", None)
 
     for field, value in update_data.items():
@@ -623,7 +1263,6 @@ def update_lesson(
 
     db.commit()
     db.refresh(db_lesson)
-
     return db_lesson
 
 
@@ -633,11 +1272,11 @@ def delete_lesson(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    db_lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    db_lesson = db.query(Lesson).options(joinedload(Lesson.schedule)).filter(Lesson.id == lesson_id).first()
     if not db_lesson:
         raise HTTPException(status_code=404, detail="Занятие не найдено")
 
+    ensure_teacher_can_manage_event(db, current_user, db_lesson.schedule)
     db.delete(db_lesson)
     db.commit()
-
     return {"message": "Занятие удалено"}
