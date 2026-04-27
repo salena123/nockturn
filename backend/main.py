@@ -5,6 +5,7 @@ from sqlalchemy import text
 from api.routers import (
     attendance,
     auth,
+    bot,
     discounts,
     disciplines,
     notes,
@@ -75,3 +76,4 @@ app.include_router(student_waitlist.router)
 app.include_router(student_notes.router)
 app.include_router(notifications.router)
 app.include_router(notes.router)
+app.include_router(bot.router)

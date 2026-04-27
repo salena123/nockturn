@@ -26,3 +26,4 @@ from .studentWaitlist import StudentWaitlist
 from .studentNote import StudentNote
 from .notification import Notification
 from .note import Note
+from .messengerLink import MessengerLink
