@@ -1,5 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session, joinedload
 
 from core.access import require_admin
 from core.deps import get_current_user, get_db
@@ -11,6 +15,10 @@ from schemas.user_document import UserDocumentCreate, UserDocumentResponse, User
 
 
 router = APIRouter(prefix="/api")
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+USER_DOCUMENTS_DIR = BACKEND_DIR / "uploads" / "user_documents"
+ALLOWED_DOCUMENT_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
 
 
 def get_user_or_404(db: Session, user_id: int) -> User:
@@ -25,6 +33,78 @@ def get_document_or_404(db: Session, document_id: int) -> UserDocument:
     if not document:
         raise HTTPException(status_code=404, detail="Документ сотрудника не найден")
     return document
+
+
+def validate_uploaded_document(file: UploadFile) -> None:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Нужно выбрать файл для загрузки")
+
+    extension = Path(file.filename).suffix.lower()
+    if extension not in ALLOWED_DOCUMENT_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Можно загружать только PDF или изображения: PNG, JPG, JPEG, WEBP",
+        )
+
+
+def save_uploaded_document(user_id: int, file: UploadFile) -> str:
+    validate_uploaded_document(file)
+    extension = Path(file.filename).suffix.lower()
+    user_dir = USER_DOCUMENTS_DIR / str(user_id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex}{extension}"
+    target_path = user_dir / filename
+
+    with target_path.open("wb") as output_file:
+        while True:
+            chunk = file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            output_file.write(chunk)
+
+    return str(target_path.relative_to(BACKEND_DIR))
+
+
+def resolve_document_path(file_path: str) -> Path:
+    path = Path(file_path)
+    if path.is_absolute():
+        return path
+    return BACKEND_DIR / path
+
+
+def delete_managed_document_file(file_path: str | None) -> None:
+    if not file_path:
+        return
+
+    target_path = resolve_document_path(file_path)
+    try:
+        target_path.relative_to(USER_DOCUMENTS_DIR)
+    except ValueError:
+        return
+
+    if target_path.exists():
+        target_path.unlink()
+
+
+def get_actor_display_name(actor_user: User | None) -> str | None:
+    if actor_user is None:
+        return None
+    return actor_user.full_name or actor_user.login
+
+
+def serialize_history_item(item: EntityChangeLog) -> dict:
+    return {
+        "id": item.id,
+        "actor_user_id": item.actor_user_id,
+        "actor_user_name": get_actor_display_name(item.actor_user),
+        "entity": item.entity,
+        "entity_id": item.entity_id,
+        "field_name": item.field_name,
+        "old_value": item.old_value,
+        "new_value": item.new_value,
+        "action": item.action,
+        "created_at": item.created_at,
+    }
 
 
 @router.get("/users/{user_id}/documents", response_model=list[UserDocumentResponse])
@@ -77,6 +157,42 @@ def create_user_document(
     return document
 
 
+@router.post("/users/{user_id}/documents/upload", response_model=UserDocumentResponse)
+def upload_user_document(
+    user_id: int,
+    document_type: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(current_user)
+    get_user_or_404(db, user_id)
+
+    file_path = save_uploaded_document(user_id, file)
+    document = UserDocument(
+        user_id=user_id,
+        document_type=document_type.strip(),
+        file_path=file_path,
+    )
+    db.add(document)
+    db.flush()
+    log_entity_change(
+        db,
+        actor_user_id=current_user.id,
+        entity="user_document",
+        entity_id=document.id,
+        action="create",
+        new_value={
+            "user_id": user_id,
+            "document_type": document.document_type,
+            "file_path": file_path,
+        },
+    )
+    db.commit()
+    db.refresh(document)
+    return document
+
+
 @router.put("/user-documents/{document_id}", response_model=UserDocumentResponse)
 def update_user_document(
     document_id: int,
@@ -107,6 +223,62 @@ def update_user_document(
     return document
 
 
+@router.put("/user-documents/{document_id}/upload", response_model=UserDocumentResponse)
+def replace_user_document_file(
+    document_id: int,
+    document_type: str = Form(...),
+    file: UploadFile | None = File(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(current_user)
+    document = get_document_or_404(db, document_id)
+
+    changes: dict[str, tuple[object, object]] = {}
+    normalized_type = document_type.strip()
+    if normalized_type != document.document_type:
+        changes["document_type"] = (document.document_type, normalized_type)
+        document.document_type = normalized_type
+
+    if file is not None and file.filename:
+        old_file_path = document.file_path
+        new_file_path = save_uploaded_document(document.user_id, file)
+        changes["file_path"] = (old_file_path, new_file_path)
+        document.file_path = new_file_path
+        delete_managed_document_file(old_file_path)
+
+    log_model_updates(
+        db,
+        actor_user_id=current_user.id,
+        entity="user_document",
+        entity_id=document.id,
+        changes=changes,
+    )
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.get("/user-documents/{document_id}/download")
+def download_user_document(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(current_user)
+    document = get_document_or_404(db, document_id)
+    file_path = resolve_document_path(document.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Файл документа не найден на сервере")
+
+    filename = file_path.name
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream",
+    )
+
+
 @router.delete("/user-documents/{document_id}")
 def delete_user_document(
     document_id: int,
@@ -127,6 +299,7 @@ def delete_user_document(
             "file_path": document.file_path,
         },
     )
+    delete_managed_document_file(document.file_path)
     db.delete(document)
     db.commit()
     return {"message": "Документ сотрудника успешно удален"}
@@ -146,10 +319,12 @@ def get_user_document_history(
     ]
     if not document_ids:
         return []
-    return (
+    history_items = (
         db.query(EntityChangeLog)
+        .options(joinedload(EntityChangeLog.actor_user))
         .filter(EntityChangeLog.entity == "user_document")
         .filter(EntityChangeLog.entity_id.in_(document_ids))
         .order_by(EntityChangeLog.created_at.desc(), EntityChangeLog.id.desc())
         .all()
     )
+    return [serialize_history_item(item) for item in history_items]

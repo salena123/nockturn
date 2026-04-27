@@ -1,6 +1,7 @@
 import React from 'react';
 
-const UserSuccessModal = ({ isOpen, onClose, user, generatedPassword, isEdit }) => {
+
+const UserSuccessModal = ({ isOpen, onClose, user, generatedPassword, isEdit, title }) => {
   if (!isOpen) return null;
 
   return (
@@ -14,7 +15,7 @@ const UserSuccessModal = ({ isOpen, onClose, user, generatedPassword, isEdit }) 
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 1000
+      zIndex: 1000,
     }}>
       <div style={{
         backgroundColor: 'white',
@@ -22,38 +23,38 @@ const UserSuccessModal = ({ isOpen, onClose, user, generatedPassword, isEdit }) 
         maxWidth: '500px',
         width: '90%',
         textAlign: 'center',
-        border: '1px solid #ccc'
+        border: '1px solid #ccc',
       }}>
         <h2 style={{ marginBottom: '20px' }}>
-          {isEdit ? 'Пользователь успешно обновлен!' : 'Пользователь успешно создан!'}
+          {title || (isEdit ? 'Сотрудник успешно обновлен!' : 'Сотрудник успешно создан!')}
         </h2>
-        
+
         <div style={{ marginBottom: '20px', textAlign: 'left' }}>
           <p><strong>Логин:</strong> {user.login}</p>
           <p><strong>ФИО:</strong> {user.full_name || 'Не указано'}</p>
           <p><strong>Роль:</strong> {user.role}</p>
           <p><strong>Статус:</strong> {user.is_active ? 'Активный' : 'Заблокирован'}</p>
-          <p><strong>Телефон:</strong> {user.phone ? `${user.phone}` : "Не указан"}</p>
+          <p><strong>Телефон:</strong> {user.phone || 'Не указан'}</p>
         </div>
 
         {generatedPassword && (
           <div style={{
             padding: '15px',
             marginBottom: '20px',
-            border: '1px solid #ccc'
+            border: '1px solid #ccc',
           }}>
             <h3 style={{ margin: '0 0 10px 0' }}>
-              Сгенерированный пароль:
+              Новый пароль:
             </h3>
             <div style={{
               padding: '10px',
               wordBreak: 'break-all',
-              border: '1px solid #ccc'
+              border: '1px solid #ccc',
             }}>
               {generatedPassword}
             </div>
             <small style={{ display: 'block', marginTop: '8px' }}>
-              Пароль показан единожды! Пожалуйста, сохраните пароль! 
+              Пароль показан только один раз. Сохраните его для сотрудника.
             </small>
           </div>
         )}
@@ -63,7 +64,7 @@ const UserSuccessModal = ({ isOpen, onClose, user, generatedPassword, isEdit }) 
             onClick={onClose}
             style={{
               padding: '10px 20px',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
           >
             OK
@@ -73,5 +74,6 @@ const UserSuccessModal = ({ isOpen, onClose, user, generatedPassword, isEdit }) 
     </div>
   );
 };
+
 
 export default UserSuccessModal;

@@ -4,18 +4,25 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from core.access import require_staff
+from core.access import require_admin, require_staff
 from core.deps import get_current_user, get_db
 from models.lesson import Lesson
 from models.lessonAttendance import LessonAttendance
 from models.lessonIssue import LessonIssue
 from models.lessonStudent import LessonStudent
+from models.notification import Notification
+from models.room import Room
 from models.scheduleEvent import ScheduleEvent
 from models.student import Student
 from models.subscription import Subscription
 from models.teacher import Teacher
 from models.user import User
-from schemas.attendance import AttendanceMark, AttendanceResponse, AttendanceUpdate
+from schemas.attendance import (
+    AttendanceMark,
+    AttendanceRescheduleRequest,
+    AttendanceResponse,
+    AttendanceUpdate,
+)
 from schemas.lesson_issue import LessonIssueCreate, LessonIssueResponse
 
 
@@ -23,6 +30,24 @@ router = APIRouter(prefix="/api")
 
 CHARGED_STATUSES = {"done", "miss_invalid"}
 ALLOWED_STATUSES = {"done", "miss_valid", "miss_invalid"}
+
+
+def create_notification(
+    db: Session,
+    *,
+    student_id: int | None,
+    text: str,
+    notification_type: str,
+) -> Notification:
+    notification = Notification(
+        student_id=student_id,
+        text=text,
+        type=notification_type,
+        created_at=datetime.utcnow(),
+    )
+    db.add(notification)
+    db.flush()
+    return notification
 
 
 def is_teacher_user(user: User) -> bool:
@@ -71,6 +96,13 @@ def get_student_or_404(db: Session, student_id: int) -> Student:
     if not student:
         raise HTTPException(status_code=404, detail="Ученик не найден")
     return student
+
+
+def get_room_or_404(db: Session, room_id: int) -> Room:
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Кабинет не найден")
+    return room
 
 
 def get_lesson_or_404(db: Session, lesson_id: int) -> Lesson:
@@ -359,6 +391,16 @@ def create_attendance_record(
     )
 
     db.add(attendance)
+    if data.status == "miss_valid":
+        create_notification(
+            db,
+            student_id=data.student_id,
+            text=(
+                f"У ученика {lesson.lesson_students[0].student.fio if lesson.lesson_students and lesson.lesson_students[0].student and lesson.lesson_students[0].student.id == data.student_id else get_student_or_404(db, data.student_id).fio} "
+                f"уважительный пропуск по занятию #{lesson.id} от {lesson.lesson_date}. Требуется перенос."
+            ),
+            notification_type="attendance_reschedule_required",
+        )
     db.commit()
     attendance = get_attendance_or_404(db, attendance.id)
     return serialize_attendance(attendance)
@@ -375,6 +417,7 @@ def update_attendance_record(
 
     attendance = ensure_attendance_access(db, current_user, attendance_id)
     old_subscription = attendance.subscription
+    old_status = attendance.status
 
     new_lesson_id = data.lesson_id if data.lesson_id is not None else attendance.lesson_id
     new_student_id = data.student_id if data.student_id is not None else attendance.student_id
@@ -404,6 +447,17 @@ def update_attendance_record(
     attendance.price_per_lesson = resolve_price_per_lesson(new_subscription, attendance.price_per_lesson)
     attendance.is_charged = new_is_charged
 
+    if new_status == "miss_valid" and old_status != "miss_valid":
+        create_notification(
+            db,
+            student_id=new_student_id,
+            text=(
+                f"У ученика {get_student_or_404(db, new_student_id).fio} уважительный пропуск по занятию "
+                f"#{lesson.id} от {lesson.lesson_date}. Требуется перенос."
+            ),
+            notification_type="attendance_reschedule_required",
+        )
+
     db.commit()
     attendance = get_attendance_or_404(db, attendance.id)
     return serialize_attendance(attendance)
@@ -426,6 +480,119 @@ def delete_attendance_record(
     db.delete(attendance)
     db.commit()
     return {"message": "Запись посещаемости успешно удалена"}
+
+
+@router.post("/attendance/{attendance_id}/reschedule")
+def create_rescheduled_lesson(
+    attendance_id: int,
+    data: AttendanceRescheduleRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(current_user)
+
+    attendance = get_attendance_or_404(db, attendance_id)
+    if attendance.status != "miss_valid":
+        raise HTTPException(status_code=400, detail="Перенос можно создать только для уважительного пропуска")
+
+    lesson = attendance.lesson
+    if not lesson or not lesson.schedule:
+        raise HTTPException(status_code=400, detail="Для этой записи не найдено исходное занятие")
+
+    if data.new_end_time <= data.new_start_time:
+        raise HTTPException(status_code=400, detail="Время окончания должно быть позже времени начала")
+
+    if data.new_start_time <= datetime.now():
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя создать перенос на прошедшее время",
+        )
+
+    target_room_id = data.room_id or lesson.schedule.room_id
+    get_room_or_404(db, target_room_id)
+
+    from api.routers.schedule import (
+        build_schedule_conflicts,
+        build_student_conflicts,
+        raise_detailed_conflict,
+        serialize_lesson_with_details,
+    )
+
+    merged_data = {
+        "teacher_id": lesson.schedule.teacher_id,
+        "discipline_id": lesson.schedule.discipline_id,
+        "room_id": target_room_id,
+        "start_time": data.new_start_time,
+        "end_time": data.new_end_time,
+        "type": lesson.schedule.type,
+    }
+    conflicts = build_schedule_conflicts(db, merged_data)
+    student_conflicts = build_student_conflicts(
+        db,
+        [attendance.student_id],
+        data.new_start_time,
+        data.new_end_time,
+    )
+    if not data.ignore_conflicts and (
+        conflicts["teacher_conflicts"] or conflicts["room_conflicts"] or student_conflicts
+    ):
+        raise_detailed_conflict(
+            "Обнаружены конфликты при создании переноса занятия.",
+            teacher_conflicts=conflicts["teacher_conflicts"],
+            room_conflicts=conflicts["room_conflicts"],
+            student_conflicts=student_conflicts,
+        )
+
+    event = ScheduleEvent(
+        teacher_id=lesson.schedule.teacher_id,
+        discipline_id=lesson.schedule.discipline_id,
+        room_id=target_room_id,
+        start_time=data.new_start_time,
+        end_time=data.new_end_time,
+        type=lesson.schedule.type,
+        created_at=datetime.utcnow(),
+    )
+    db.add(event)
+    db.flush()
+
+    new_lesson = Lesson(
+        schedule_id=event.id,
+        lesson_date=data.new_start_time.date(),
+        status="planned",
+        lesson_type="individual",
+        max_students=1,
+        created_at=datetime.utcnow(),
+    )
+    db.add(new_lesson)
+    db.flush()
+
+    db.add(
+        LessonStudent(
+            lesson_id=new_lesson.id,
+            student_id=attendance.student_id,
+            enrolled_at=datetime.utcnow(),
+        )
+    )
+
+    student = attendance.student or get_student_or_404(db, attendance.student_id)
+    transfer_comment = f"Создан перенос занятия #{new_lesson.id} на {data.new_start_time.strftime('%d.%m.%Y %H:%M')}"
+    attendance.comment = f"{attendance.comment}\n{transfer_comment}".strip() if attendance.comment else transfer_comment
+
+    create_notification(
+        db,
+        student_id=attendance.student_id,
+        text=f"Для ученика {student.fio} создан перенос занятия на {data.new_start_time.strftime('%d.%m.%Y %H:%M')}.",
+        notification_type="attendance_rescheduled",
+    )
+
+    db.commit()
+    lesson_with_details = (
+        get_lesson_query(db)
+        .options(joinedload(Lesson.issues))
+        .filter(Lesson.id == new_lesson.id)
+        .first()
+    )
+    return serialize_lesson_with_details(db, lesson_with_details)
 
 
 @router.get("/lessons/{lesson_id}/issues", response_model=list[LessonIssueResponse])
@@ -453,7 +620,7 @@ def create_lesson_issue(
     db: Session = Depends(get_db),
 ):
     require_staff(current_user)
-    ensure_lesson_access(db, current_user, lesson_id)
+    lesson = ensure_lesson_access(db, current_user, lesson_id)
 
     description = (data.description or "").strip()
     if not description:
@@ -461,6 +628,14 @@ def create_lesson_issue(
 
     issue = LessonIssue(lesson_id=lesson_id, description=description)
     db.add(issue)
+    create_notification(
+        db,
+        student_id=lesson.lesson_students[0].student_id if lesson.lesson_students else None,
+        text=(
+            f"Проблема по занятию #{lesson.id} от {lesson.lesson_date}: {description}"
+        ),
+        notification_type="lesson_issue",
+    )
     db.commit()
     db.refresh(issue)
     return issue

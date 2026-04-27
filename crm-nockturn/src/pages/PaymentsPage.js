@@ -122,7 +122,7 @@ const PaymentsPage = ({ currentUser }) => {
 
   return (
     <div>
-      <h2>Платежи</h2>
+      <h2>Калькулятор платежей</h2>
 
       {error && <div>{error}</div>}
 

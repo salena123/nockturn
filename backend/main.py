@@ -1,11 +1,52 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import attendance, auth, payments, students, subscriptions, users, schedule, disciplines, rooms, tariffs, discounts, teachers, user_documents, student_waitlist, student_notes
+from sqlalchemy import text
+
+from api.routers import (
+    attendance,
+    auth,
+    discounts,
+    disciplines,
+    notes,
+    notifications,
+    payments,
+    rooms,
+    schedule,
+    student_notes,
+    student_waitlist,
+    students,
+    subscriptions,
+    tariffs,
+    teachers,
+    user_documents,
+    users,
+)
 from db.session import engine
 from models import Base
 
 
+def ensure_extended_schema() -> None:
+    statements = [
+        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS recipient_user_id INTEGER",
+        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'normal'",
+        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT false",
+        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE notes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id INTEGER",
+        "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS note_id INTEGER",
+        "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT false",
+        "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP",
+        "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications(user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_notifications_note_id ON notifications(note_id)",
+        "CREATE INDEX IF NOT EXISTS ix_notes_recipient_user_id ON notes(recipient_user_id)",
+    ]
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 Base.metadata.create_all(bind=engine)
+ensure_extended_schema()
 
 app = FastAPI()
 
@@ -32,3 +73,5 @@ app.include_router(teachers.router)
 app.include_router(user_documents.router)
 app.include_router(student_waitlist.router)
 app.include_router(student_notes.router)
+app.include_router(notifications.router)
+app.include_router(notes.router)

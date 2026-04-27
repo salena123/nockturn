@@ -1,345 +1,39 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../api';
+import AttendanceModal from './calendar/AttendanceModal';
+import CalendarMonthView from './calendar/MonthView';
+import CalendarTimedView from './calendar/TimedView';
+import EventDetailsModal from './calendar/EventDetailsModal';
+import FieldSelect from './calendar/FieldSelect';
+import HistoryModal from './calendar/HistoryModal';
 import ActionDialog from './ui/ActionDialog';
-
-const SLOT_MINUTES = 15;
-const DAY_START_HOUR = 9;
-const DAY_END_HOUR = 23;
-const ROW_HEIGHT = 28;
-const TIME_COLUMN_WIDTH = 88;
-
-const VIEW_OPTIONS = [
-  { value: 'day', label: 'День' },
-  { value: 'week', label: 'Неделя' },
-  { value: 'month', label: 'Месяц' },
-];
-
-const EVENT_TYPE_OPTIONS = [
-  { value: 'lesson', label: 'Урок' },
-  { value: 'event', label: 'Мероприятие' },
-  { value: 'masterclass', label: 'Мастер-класс' },
-];
-
-const LESSON_TYPE_OPTIONS = [
-  { value: 'individual', label: 'Индивидуальное' },
-  { value: 'group', label: 'Групповое' },
-];
-
-const RECURRENCE_OPTIONS = [
-  { value: 'none', label: 'Без повторения' },
-  { value: 'daily', label: 'Каждый день' },
-  { value: 'weekly', label: 'Каждую неделю' },
-  { value: 'weekdays', label: 'По дням недели' },
-];
-
-const ATTENDANCE_STATUS_OPTIONS = [
-  { value: 'done', label: 'Пришел' },
-  { value: 'miss_valid', label: 'Не пришел по уважительной причине' },
-  { value: 'miss_invalid', label: 'Не пришел без уважительной причины' },
-];
-
-const WEEKDAY_OPTIONS = [
-  { value: 0, label: 'Пн' },
-  { value: 1, label: 'Вт' },
-  { value: 2, label: 'Ср' },
-  { value: 3, label: 'Чт' },
-  { value: 4, label: 'Пт' },
-  { value: 5, label: 'Сб' },
-  { value: 6, label: 'Вс' },
-];
-
-const pad = (value) => String(value).padStart(2, '0');
-
-const formatLocalDate = (date) =>
-  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-
-const formatLocalMonth = (date) =>
-  `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
-
-const formatLocalDateTime = (date) =>
-  `${formatLocalDate(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
-
-const parseServerDateTime = (value) => {
-  if (!value) {
-    return null;
-  }
-
-  const hasTimezone = value.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(value);
-  if (hasTimezone) {
-    return new Date(value);
-  }
-
-  const [datePart, timePart = '00:00:00'] = value.split('T');
-  const [year, month, day] = datePart.split('-').map(Number);
-  const [hours = 0, minutes = 0, seconds = 0] = timePart.split(':').map(Number);
-
-  return new Date(year, month - 1, day, hours, minutes, seconds);
-};
-
-const addDays = (date, days) => {
-  const nextDate = new Date(date);
-  nextDate.setDate(nextDate.getDate() + days);
-  return nextDate;
-};
-
-const startOfWeek = (date) => {
-  const nextDate = new Date(date);
-  const diff = nextDate.getDate() - nextDate.getDay() + (nextDate.getDay() === 0 ? -6 : 1);
-  nextDate.setDate(diff);
-  nextDate.setHours(0, 0, 0, 0);
-  return nextDate;
-};
-
-const startOfMonth = (date) => {
-  const nextDate = new Date(date);
-  nextDate.setDate(1);
-  nextDate.setHours(0, 0, 0, 0);
-  return nextDate;
-};
-
-const getWeekDays = (date) => {
-  const firstDay = startOfWeek(date);
-  return Array.from({ length: 7 }, (_, index) => addDays(firstDay, index));
-};
-
-const getMonthGridDays = (date) => {
-  const firstDay = startOfMonth(date);
-  const gridStart = startOfWeek(firstDay);
-  return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
-};
-
-const getTimeSlots = () => {
-  const slots = [];
-  for (let hour = DAY_START_HOUR; hour <= DAY_END_HOUR; hour += 1) {
-    for (let minute = 0; minute < 60; minute += SLOT_MINUTES) {
-      slots.push(`${pad(hour)}:${pad(minute)}`);
-    }
-  }
-  return slots;
-};
-
-const getRangeLabel = (viewMode, currentDate) => {
-  if (viewMode === 'day') {
-    return currentDate.toLocaleDateString('ru-RU', {
-      weekday: 'long',
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    });
-  }
-
-  if (viewMode === 'month') {
-    return currentDate.toLocaleDateString('ru-RU', {
-      month: 'long',
-      year: 'numeric',
-    });
-  }
-
-  const weekDays = getWeekDays(currentDate);
-  return `${weekDays[0].toLocaleDateString('ru-RU')} - ${weekDays[6].toLocaleDateString('ru-RU')}`;
-};
-
-const getWeekdayLabel = (date) =>
-  date.toLocaleDateString('ru-RU', {
-    weekday: 'short',
-    day: '2-digit',
-    month: '2-digit',
-  });
-
-const getEventColor = (event) => {
-  if (event.has_conflict) {
-    return '#c62828';
-  }
-  if (event.type === 'masterclass') {
-    return '#ef6c00';
-  }
-  if (event.type === 'event') {
-    return '#1565c0';
-  }
-  return '#2e7d32';
-};
-
-const getEventDurationMinutes = (startTime, endTime) =>
-  Math.max(SLOT_MINUTES, (endTime.getTime() - startTime.getTime()) / 60000);
-
-const formatApiError = (detail) => {
-  if (!detail) {
-    return 'Ошибка сохранения';
-  }
-
-  if (typeof detail === 'string') {
-    return detail;
-  }
-
-  const lines = [];
-  if (detail.message) {
-    lines.push(detail.message);
-  }
-
-  if (detail.teacher_conflicts?.length) {
-    lines.push('');
-    lines.push('Конфликт преподавателя:');
-    detail.teacher_conflicts.forEach((conflict) => {
-      lines.push(
-        `- ${conflict.teacher_name || 'Преподаватель'} занят: ${conflict.time}` +
-          `${conflict.discipline_name ? `, ${conflict.discipline_name}` : ''}` +
-          `${conflict.room_name ? `, кабинет ${conflict.room_name}` : ''}`
-      );
-    });
-  }
-
-  if (detail.room_conflicts?.length) {
-    lines.push('');
-    lines.push('Конфликт кабинета:');
-    detail.room_conflicts.forEach((conflict) => {
-      lines.push(
-        `- Кабинет ${conflict.room_name || conflict.room_id || ''} занят: ${conflict.time}` +
-          `${conflict.teacher_name ? `, преподаватель ${conflict.teacher_name}` : ''}`
-      );
-    });
-  }
-
-  if (detail.student_conflicts?.length) {
-    lines.push('');
-    lines.push('Конфликт ученика:');
-    detail.student_conflicts.forEach((conflict) => {
-      lines.push(
-        `- ${conflict.student_name || 'Ученик'} уже записан: ${conflict.time}` +
-          `${conflict.discipline_name ? `, ${conflict.discipline_name}` : ''}`
-      );
-    });
-  }
-
-  return lines.join('\n').trim() || 'Ошибка сохранения';
-};
-
-const formatLessonLabel = (event) => {
-  const start = parseServerDateTime(event.start_time);
-  const end = parseServerDateTime(event.end_time);
-
-  return `${event.discipline?.name || 'Без дисциплины'} • ${
-    start ? start.toLocaleDateString('ru-RU') : ''
-  } ${start ? start.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}-${
-    end ? end.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''
-  }`;
-};
-
-const formatRecurringLabel = (recurring) => {
-  if (!recurring?.repeat_type || recurring.repeat_type === 'none') {
-    return 'Без повторения';
-  }
-
-  const repeatUntil = recurring.repeat_until
-    ? new Date(recurring.repeat_until).toLocaleDateString('ru-RU')
-    : 'без даты окончания';
-
-  if (recurring.repeat_type === 'daily') {
-    return `Каждый день до ${repeatUntil}`;
-  }
-  if (recurring.repeat_type === 'weekly') {
-    return `Каждую неделю до ${repeatUntil}`;
-  }
-  return `По выбранным дням недели до ${repeatUntil}`;
-};
-
-const formatEventConflictLabel = (event) => {
-  const teacherConflictCount = event?.conflicts?.teacher_conflicts?.length || 0;
-  const roomConflictCount = event?.conflicts?.room_conflicts?.length || 0;
-
-  if (teacherConflictCount && roomConflictCount) {
-    return 'У занятия есть конфликт по преподавателю и кабинету.';
-  }
-
-  if (teacherConflictCount) {
-    return 'У занятия есть конфликт по преподавателю.';
-  }
-
-  if (roomConflictCount) {
-    return 'У занятия есть конфликт по кабинету.';
-  }
-
-  if (event?.has_conflict) {
-    return 'У занятия есть конфликт.';
-  }
-
-  return '';
-};
-
-const pickSubscriptionForLessonDate = (subscriptions, lessonDate) => {
-  if (!subscriptions?.length) {
-    return null;
-  }
-
-  const candidates = lessonDate
-    ? subscriptions.filter((subscription) => {
-        const startsOk = !subscription.start_date || subscription.start_date <= lessonDate;
-        const endsOk = !subscription.end_date || subscription.end_date >= lessonDate;
-        return startsOk && endsOk;
-      })
-    : subscriptions;
-
-  if (!candidates.length) {
-    return null;
-  }
-
-  const sortByFreshness = (left, right) => {
-    const leftStart = left.start_date || '';
-    const rightStart = right.start_date || '';
-    if (leftStart !== rightStart) {
-      return rightStart.localeCompare(leftStart);
-    }
-    const leftCreated = left.created_at || '';
-    const rightCreated = right.created_at || '';
-    if (leftCreated !== rightCreated) {
-      return rightCreated.localeCompare(leftCreated);
-    }
-    return (right.id || 0) - (left.id || 0);
-  };
-
-  const activeWithBalance = candidates
-    .filter(
-      (subscription) =>
-        subscription.status === 'active' &&
-        (subscription.balance_lessons === null || subscription.balance_lessons > 0)
-    )
-    .sort(sortByFreshness);
-  if (activeWithBalance.length) {
-    return activeWithBalance[0];
-  }
-
-  const activeCandidates = candidates
-    .filter((subscription) => subscription.status === 'active')
-    .sort(sortByFreshness);
-  if (activeCandidates.length) {
-    return activeCandidates[0];
-  }
-
-  const positiveBalanceCandidates = candidates
-    .filter((subscription) => subscription.balance_lessons === null || subscription.balance_lessons > 0)
-    .sort(sortByFreshness);
-  if (positiveBalanceCandidates.length) {
-    return positiveBalanceCandidates[0];
-  }
-
-  return [...candidates].sort(sortByFreshness)[0] || null;
-};
-
-const triggerDownload = (blob, filename) => {
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.URL.revokeObjectURL(url);
-};
+import {
+  EVENT_TYPE_OPTIONS,
+  LESSON_TYPE_OPTIONS,
+  RECURRENCE_OPTIONS,
+  WEEKDAY_OPTIONS,
+  VIEW_OPTIONS,
+  formatApiError,
+  formatLocalDate,
+  formatLocalDateTime,
+  formatLocalMonth,
+  getMonthGridDays,
+  getRangeLabel,
+  getTimeSlots,
+  getWeekDays,
+  pad,
+  parseServerDateTime,
+  startOfMonth,
+  startOfWeek,
+  triggerDownload,
+} from './calendar/calendarGridShared';
 
 const CalendarGrid = ({ currentUser }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState('week');
   const [teacherFilter, setTeacherFilter] = useState('');
   const [roomFilter, setRoomFilter] = useState('');
+  const [studentSearchFilter, setStudentSearchFilter] = useState('');
   const [events, setEvents] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [disciplines, setDisciplines] = useState([]);
@@ -372,6 +66,20 @@ const CalendarGrid = ({ currentUser }) => {
   const timeSlots = useMemo(() => getTimeSlots(), []);
   const visibleDays = viewMode === 'day' ? [currentDate] : weekDays;
   const isTeacherUser = currentUser?.role === 'teacher';
+  const filteredCalendarEvents = useMemo(() => {
+    const query = studentSearchFilter.trim().toLowerCase();
+    if (!query) {
+      return events;
+    }
+
+    return events.filter((event) =>
+      (event.lesson?.students || []).some((student) =>
+        String(student.name || student.fio || '')
+          .toLowerCase()
+          .includes(query)
+      )
+    );
+  }, [events, studentSearchFilter]);
   const currentTeacher = useMemo(
     () => teachers.find((teacher) => teacher.user_id === currentUser?.id) || null,
     [teachers, currentUser]
@@ -515,7 +223,7 @@ const CalendarGrid = ({ currentUser }) => {
   };
 
   const getEventsForDate = (date) =>
-    events
+    filteredCalendarEvents
       .map((event) => ({
         ...event,
         parsedStart: parseServerDateTime(event.start_time),
@@ -749,6 +457,12 @@ const CalendarGrid = ({ currentUser }) => {
             </option>
           ))}
         </select>
+        <input
+          type="text"
+          value={studentSearchFilter}
+          onChange={(e) => setStudentSearchFilter(e.target.value)}
+          placeholder="Поиск по ученику"
+        />
       </div>
 
       <div style={{ marginBottom: '16px', padding: '10px', border: '1px solid #ddd' }}>
@@ -759,7 +473,7 @@ const CalendarGrid = ({ currentUser }) => {
       </div>
 
       {viewMode === 'month' ? (
-        <MonthView
+        <CalendarMonthView
           days={monthDays}
           currentDate={currentDate}
           getEventsForDate={getEventsForDate}
@@ -768,7 +482,7 @@ const CalendarGrid = ({ currentUser }) => {
           weekends={weekends}
         />
       ) : (
-        <TimedView
+        <CalendarTimedView
           days={visibleDays}
           viewMode={viewMode}
           timeSlots={timeSlots}
@@ -877,261 +591,6 @@ const CalendarGrid = ({ currentUser }) => {
   );
 };
 
-const TimedView = ({
-  days,
-  viewMode,
-  timeSlots,
-  getTimedEventsForDate,
-  onCellClick,
-  onEventClick,
-  onMoveEvent,
-  setDraggedEvent,
-  draggedEvent,
-  lunchBreaks,
-  weekends,
-}) => {
-  const getEventTop = (eventStart) => {
-    const startOfDay = new Date(eventStart);
-    startOfDay.setHours(DAY_START_HOUR, 0, 0, 0);
-    const diffMinutes = Math.max(0, (eventStart.getTime() - startOfDay.getTime()) / 60000);
-    return (diffMinutes / SLOT_MINUTES) * ROW_HEIGHT;
-  };
-
-  const getEventHeight = (eventStart, eventEnd) => {
-    const durationMinutes = getEventDurationMinutes(eventStart, eventEnd);
-    return (durationMinutes / SLOT_MINUTES) * ROW_HEIGHT;
-  };
-
-  const handleDrop = async (day, time, droppedEvent) => {
-    if (!droppedEvent) {
-      return;
-    }
-    const [hours, minutes] = time.split(':').map(Number);
-    const nextDate = new Date(day);
-    nextDate.setHours(hours, minutes, 0, 0);
-    await onMoveEvent(droppedEvent, nextDate);
-  };
-
-  return (
-    <div style={{ overflowX: 'auto', border: '1px solid #ddd' }}>
-      <div style={{ display: 'flex', minWidth: viewMode === 'day' ? '520px' : '1200px' }}>
-        <div style={{ width: `${TIME_COLUMN_WIDTH}px`, flexShrink: 0, borderRight: '1px solid #ddd' }}>
-          <div style={{ height: '56px', borderBottom: '1px solid #ddd', backgroundColor: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            Время
-          </div>
-          {timeSlots.map((time) => (
-            <div
-              key={time}
-              style={{
-                height: `${ROW_HEIGHT}px`,
-                borderBottom: '1px solid #eee',
-                padding: '4px',
-                boxSizing: 'border-box',
-                fontSize: '12px',
-                backgroundColor: '#f9f9f9',
-              }}
-            >
-              {time}
-            </div>
-          ))}
-        </div>
-
-        {days.map((day, index) => {
-          const dayEvents = getTimedEventsForDate(day);
-          const isWeekend = weekends.has(day.getDay() === 0 ? 6 : day.getDay() - 1);
-
-          return (
-            <div
-              key={day.toISOString()}
-              style={{
-                flex: 1,
-                minWidth: viewMode === 'day' ? '420px' : '150px',
-                borderRight: index === days.length - 1 ? 'none' : '1px solid #ddd',
-              }}
-            >
-              <div
-                style={{
-                  height: '56px',
-                  borderBottom: '1px solid #ddd',
-                  backgroundColor: isWeekend ? '#fff3e0' : '#f5f5f5',
-                  padding: '10px',
-                  boxSizing: 'border-box',
-                }}
-              >
-                <div>{getWeekdayLabel(day)}</div>
-              </div>
-
-              <div style={{ position: 'relative', height: `${timeSlots.length * ROW_HEIGHT}px` }}>
-                {lunchBreaks.map((period) => {
-                  const [startHour, startMinute] = period.start_time.split(':').map(Number);
-                  const [endHour, endMinute] = period.end_time.split(':').map(Number);
-                  const top = ((startHour - DAY_START_HOUR) * 60 + startMinute) / SLOT_MINUTES * ROW_HEIGHT;
-                  const height = (((endHour - startHour) * 60) + (endMinute - startMinute)) / SLOT_MINUTES * ROW_HEIGHT;
-                  return (
-                    <div
-                      key={`${day.toISOString()}-${period.start_time}`}
-                      style={{
-                        position: 'absolute',
-                        left: 0,
-                        right: 0,
-                        top: `${top}px`,
-                        height: `${height}px`,
-                        backgroundColor: 'rgba(255, 235, 59, 0.18)',
-                        zIndex: 0,
-                        pointerEvents: 'none',
-                      }}
-                    />
-                  );
-                })}
-
-                {timeSlots.map((time, slotIndex) => (
-                  <div
-                    key={`${day.toISOString()}-${time}`}
-                    style={{
-                      position: 'absolute',
-                      left: 0,
-                      right: 0,
-                      top: `${slotIndex * ROW_HEIGHT}px`,
-                      height: `${ROW_HEIGHT}px`,
-                      borderBottom: '1px solid #eee',
-                      boxSizing: 'border-box',
-                      cursor: 'pointer',
-                      backgroundColor: draggedEvent ? 'rgba(33, 150, 243, 0.02)' : 'transparent',
-                    }}
-                    onClick={() => onCellClick(new Date(`${formatLocalDate(day)}T${time}:00`))}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={async (event) => {
-                      event.preventDefault();
-                      await handleDrop(day, time, draggedEvent);
-                      setDraggedEvent(null);
-                    }}
-                  />
-                ))}
-
-                {dayEvents.map((event) => {
-                  const top = getEventTop(event.parsedStart);
-                  const height = getEventHeight(event.parsedStart, event.parsedEnd);
-                  const widthPercent = 100 / event.laneCount;
-                  const leftPercent = event.laneIndex * widthPercent;
-
-                  return (
-                    <div
-                      key={event.id}
-                      draggable
-                      onDragStart={() => setDraggedEvent(event)}
-                      onDragEnd={() => setDraggedEvent(null)}
-                      style={{
-                        position: 'absolute',
-                        top: `${top}px`,
-                        left: `calc(${leftPercent}% + 2px)`,
-                        width: `calc(${widthPercent}% - 4px)`,
-                        height: `${Math.max(height - 2, ROW_HEIGHT)}px`,
-                        backgroundColor: getEventColor(event),
-                        color: 'white',
-                        borderRadius: '4px',
-                        border: event.has_conflict ? '2px solid #ffebee' : 'none',
-                        padding: '4px 6px',
-                        boxSizing: 'border-box',
-                        fontSize: '11px',
-                        overflow: 'hidden',
-                        zIndex: 2,
-                        cursor: 'pointer',
-                      }}
-                      onClick={(clickEvent) => {
-                        clickEvent.stopPropagation();
-                        onEventClick(event);
-                      }}
-                    >
-                      <div><strong>{event.discipline?.name || 'Без дисциплины'}</strong></div>
-                      <div>
-                        {event.parsedStart.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                        {' - '}
-                        {event.parsedEnd.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                      <div>{event.room?.name || '—'}</div>
-                      {event.lesson?.students?.length > 0 && (
-                        <div>{event.lesson.students.map((student) => student.name).join(', ')}</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-const MonthView = ({ days, currentDate, getEventsForDate, onCellClick, onEventClick, weekends }) => {
-  const monthNumber = currentDate.getMonth();
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
-      {WEEKDAY_OPTIONS.map((weekday) => (
-        <div key={weekday.value} style={{ fontWeight: 'bold', padding: '8px 0' }}>
-          {weekday.label}
-        </div>
-      ))}
-
-      {days.map((day) => {
-        const dayEvents = getEventsForDate(day);
-        const isCurrentMonth = day.getMonth() === monthNumber;
-        const weekdayIndex = day.getDay() === 0 ? 6 : day.getDay() - 1;
-        const isWeekend = weekends.has(weekdayIndex);
-
-        return (
-          <div
-            key={day.toISOString()}
-            style={{
-              minHeight: '120px',
-              border: '1px solid #ddd',
-              padding: '8px',
-              boxSizing: 'border-box',
-              backgroundColor: isWeekend ? '#fff8e1' : isCurrentMonth ? 'white' : '#fafafa',
-              cursor: 'pointer',
-            }}
-            onClick={() => onCellClick(new Date(`${formatLocalDate(day)}T09:00:00`))}
-          >
-            <div style={{ marginBottom: '8px', color: isCurrentMonth ? '#111' : '#9e9e9e' }}>
-              {day.getDate()}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {dayEvents.map((event) => (
-                <button
-                  key={event.id}
-                  type="button"
-                  style={{
-                    textAlign: 'left',
-                    border: 'none',
-                    borderRadius: '4px',
-                    backgroundColor: getEventColor(event),
-                    color: 'white',
-                    padding: '4px 6px',
-                    cursor: 'pointer',
-                    fontSize: '11px',
-                  }}
-                  onClick={(clickEvent) => {
-                    clickEvent.stopPropagation();
-                    onEventClick(event);
-                  }}
-                >
-                  {parseServerDateTime(event.start_time)?.toLocaleTimeString('ru-RU', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
-                  {event.discipline?.name || 'Занятие'}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
 const LessonModal = ({
   showModal,
   onClose,
@@ -1174,6 +633,14 @@ const LessonModal = ({
   const [newRoomName, setNewRoomName] = useState('');
   const [localDisciplines, setLocalDisciplines] = useState(disciplines);
   const [localRooms, setLocalRooms] = useState(rooms);
+  const availableStudents = useMemo(
+    () =>
+      students.filter((student) => {
+        const normalizedStatus = String(student.status || '').trim().toLowerCase();
+        return normalizedStatus !== 'заморожен' && normalizedStatus !== 'отказался';
+      }),
+    [students]
+  );
 
   const durations = useMemo(() => {
     const list = [];
@@ -1186,15 +653,15 @@ const LessonModal = ({
   const filteredStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase();
     if (!query) {
-      return students;
+      return availableStudents;
     }
-    return students.filter(
+    return availableStudents.filter(
       (student) =>
         student.fio?.toLowerCase().includes(query) ||
         student.phone?.toLowerCase().includes(query) ||
         student.email?.toLowerCase().includes(query)
     );
-  }, [studentSearch, students]);
+  }, [availableStudents, studentSearch]);
 
   useEffect(() => {
     setLocalDisciplines(disciplines);
@@ -1464,7 +931,7 @@ const LessonModal = ({
               onChange={(value) => setFormData((prev) => ({ ...prev, student_id: value ? Number(value) : '' }))}
               options={[
                 { value: '', label: 'Выберите ученика' },
-                ...students.map((student) => ({ value: student.id, label: student.fio })),
+                ...availableStudents.map((student) => ({ value: student.id, label: student.fio })),
               ]}
               required
             />
@@ -1496,6 +963,9 @@ const LessonModal = ({
               <div style={{ marginBottom: '15px' }}>
                 <label>Ученики:</label>
                 <div style={{ border: '1px solid #ccc', marginTop: '5px', padding: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                  {!filteredStudents.length && (
+                    <div>Нет доступных учеников для добавления в занятие.</div>
+                  )}
                   {filteredStudents.map((student) => {
                     const checked = formData.student_ids.includes(student.id);
                     return (
@@ -1673,332 +1143,7 @@ const LessonModal = ({
   );
 };
 
-const FieldSelect = ({ label, value, onChange, options, required = false }) => (
-  <div style={{ marginBottom: '15px' }}>
-    <label>{label}:</label>
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      required={required}
-      style={{ width: '100%', padding: '5px', marginTop: '5px' }}
-    >
-      {options.map((option) => (
-        <option key={`${label}-${option.value}`} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  </div>
-);
-
-const EventDetailsModal = ({ event, onClose, onDelete, onOpenAttendance, onOpenHistory, onEdit }) => {
-  const eventStart = parseServerDateTime(event.start_time);
-  const canEdit = Boolean(eventStart && new Date() < eventStart);
-  const canMarkAttendance = Boolean(
-    event.lesson?.id &&
-    event.lesson?.students?.length &&
-    eventStart &&
-    new Date() >= eventStart
-  );
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1100 }}>
-      <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', width: '460px' }}>
-        <h3>Занятие</h3>
-        <p>{formatLessonLabel(event)}</p>
-        <p>Тип: {EVENT_TYPE_OPTIONS.find((option) => option.value === event.type)?.label || event.type}</p>
-        <p>Преподаватель: {event.teacher?.full_name || event.teacher?.specialization || '—'}</p>
-        <p>Кабинет: {event.room?.name || '—'}</p>
-        <p>Повторяемость: {formatRecurringLabel(event.recurring)}</p>
-        {event.lesson?.students?.length > 0 && (
-          <p>Ученики: {event.lesson.students.map((student) => student.name).join(', ')}</p>
-        )}
-        {event.has_conflict && (
-          <div style={{ marginBottom: '12px', color: '#b71c1c' }}>
-            {formatEventConflictLabel(event)}
-          </div>
-        )}
-        {!canMarkAttendance && event.lesson?.id && (
-          <p style={{ color: '#b71c1c' }}>Отметить посещаемость можно только после начала занятия.</p>
-        )}
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => onOpenHistory(event)}>
-            История
-          </button>
-          <button type="button" onClick={() => onEdit(event)} disabled={!canEdit}>
-            Редактировать
-          </button>
-          {event.lesson?.id && (
-            <button type="button" onClick={() => onOpenAttendance(event)} disabled={!canMarkAttendance}>
-              Отметить посещаемость
-            </button>
-          )}
-          <button type="button" onClick={onClose}>Закрыть</button>
-          <button type="button" onClick={() => onDelete(event.id)} style={{ backgroundColor: '#c62828', color: 'white', border: 'none', padding: '8px 16px' }}>
-            Удалить
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const HistoryModal = ({ event, rows, loading, onClose }) => (
-  <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1150 }}>
-    <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', width: '760px', maxHeight: '80vh', overflowY: 'auto' }}>
-      <h3>История изменений</h3>
-      <p>{formatLessonLabel(event)}</p>
-      {loading ? (
-        <div>Загрузка истории...</div>
-      ) : rows.length === 0 ? (
-        <div>Изменений пока нет.</div>
-      ) : (
-        <table border="1" cellPadding="6" cellSpacing="0" style={{ width: '100%', marginBottom: '16px' }}>
-          <thead>
-            <tr>
-              <th>Когда</th>
-              <th>Кто изменил</th>
-              <th>Было</th>
-              <th>Стало</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.changed_at ? new Date(row.changed_at).toLocaleString('ru-RU') : '—'}</td>
-                <td>{row.changed_by?.full_name || row.changed_by?.login || '—'}</td>
-                <td>{row.old_start ? new Date(row.old_start).toLocaleString('ru-RU') : '—'}</td>
-                <td>{row.new_start ? new Date(row.new_start).toLocaleString('ru-RU') : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button type="button" onClick={onClose}>Закрыть</button>
-      </div>
-    </div>
-  </div>
-);
-
-const AttendanceModal = ({ event, onClose, onSaved }) => {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  const eventStart = parseServerDateTime(event.start_time);
-  const canMarkAttendance = Boolean(eventStart && new Date() >= eventStart);
-
-  useEffect(() => {
-    const loadAttendance = async () => {
-      setLoading(true);
-      setError('');
-
-      try {
-        const [response, subscriptionsResponses] = await Promise.all([
-          api.get(`/api/attendance?lesson_id=${event.lesson.id}`),
-          Promise.all(
-            (event.lesson.students || []).map((student) =>
-              api.get(`/api/students/${student.id}/subscriptions`)
-            )
-          ),
-        ]);
-
-        const recordsByStudentId = {};
-        (response.data || []).forEach((record) => {
-          recordsByStudentId[record.student_id] = record;
-        });
-
-        const subscriptionsByStudentId = {};
-        (event.lesson.students || []).forEach((student, index) => {
-          subscriptionsByStudentId[student.id] = subscriptionsResponses[index]?.data || [];
-        });
-
-        setRows(
-          (event.lesson.students || []).map((student) => {
-            const existing = recordsByStudentId[student.id];
-            const matchingSubscription = pickSubscriptionForLessonDate(
-              subscriptionsByStudentId[student.id],
-              event.lesson.lesson_date
-            );
-            const hasMatchingSubscription = Boolean(matchingSubscription);
-            const canCharge =
-              hasMatchingSubscription &&
-              matchingSubscription.price_per_lesson !== null &&
-              matchingSubscription.price_per_lesson !== undefined;
-
-            return {
-              student_id: student.id,
-              student_name: student.name,
-              attendance_id: existing?.id || null,
-              status: existing?.status || (canCharge ? 'done' : 'miss_valid'),
-              comment: existing?.comment || '',
-              subscription_id: hasMatchingSubscription ? matchingSubscription.id : null,
-              subscription_price_per_lesson: hasMatchingSubscription
-                ? matchingSubscription.price_per_lesson
-                : null,
-              subscription_balance_lessons: hasMatchingSubscription
-                ? matchingSubscription.balance_lessons
-                : null,
-              can_charge: canCharge,
-              charge_block_reason: hasMatchingSubscription
-                ? (canCharge ? '' : 'В абонементе не указана стоимость занятия')
-                : 'На дату урока нет подходящего абонемента',
-            };
-          })
-        );
-      } catch (loadError) {
-        setError(formatApiError(loadError.response?.data?.detail || loadError.response?.data?.message));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadAttendance();
-  }, [event]);
-
-  const handleChange = (studentId, field, value) => {
-    setRows((prev) =>
-      prev.map((row) => {
-        if (row.student_id !== studentId) {
-          return row;
-        }
-
-        if (
-          field === 'status' &&
-          !row.can_charge &&
-          (value === 'done' || value === 'miss_invalid')
-        ) {
-          return { ...row, status: 'miss_valid' };
-        }
-
-        return { ...row, [field]: value };
-      })
-    );
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    setError('');
-
-    try {
-      const blockedRows = rows.filter(
-        (row) => !row.can_charge && (row.status === 'done' || row.status === 'miss_invalid')
-      );
-
-      if (blockedRows.length) {
-        setError(
-          blockedRows
-            .map((row) => `${row.student_name}: ${row.charge_block_reason}`)
-            .join('\n')
-        );
-        setSaving(false);
-        return;
-      }
-
-      await Promise.all(
-        rows.map((row) => {
-          const payload = {
-            lesson_id: event.lesson.id,
-            student_id: row.student_id,
-            status: row.status,
-            comment: row.comment || null,
-          };
-
-          if (row.attendance_id) {
-            return api.put(`/api/attendance/${row.attendance_id}`, payload);
-          }
-
-          return api.post('/api/attendance', payload);
-        })
-      );
-
-      await onSaved();
-    } catch (saveError) {
-      setError(formatApiError(saveError.response?.data?.detail || saveError.response?.data?.message));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1200 }}>
-      <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', width: '760px', maxHeight: '85vh', overflowY: 'auto' }}>
-        <h3>Отметка посещаемости</h3>
-        <p>{formatLessonLabel(event)}</p>
-        {error && <div style={{ marginBottom: '12px', color: '#b71c1c', whiteSpace: 'pre-line' }}>{typeof error === 'string' ? error : JSON.stringify(error)}</div>}
-
-        {loading ? (
-          <div>Загрузка данных...</div>
-        ) : !rows.length ? (
-          <div>У этого урока нет привязанных учеников.</div>
-        ) : (
-          <table border="1" cellPadding="6" cellSpacing="0" style={{ width: '100%', marginBottom: '16px' }}>
-            <thead>
-              <tr>
-                <th>Ученик</th>
-                <th>Статус</th>
-                <th>Абонемент</th>
-                <th>Комментарий</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.student_id}>
-                  <td>{row.student_name}</td>
-                  <td>
-                    <select
-                      value={row.status}
-                      onChange={(e) => handleChange(row.student_id, 'status', e.target.value)}
-                      disabled={!canMarkAttendance || saving}
-                    >
-                      {ATTENDANCE_STATUS_OPTIONS.map((option) => (
-                        <option
-                          key={`${row.student_id}-${option.value}`}
-                          value={option.value}
-                          disabled={!row.can_charge && (option.value === 'done' || option.value === 'miss_invalid')}
-                        >
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    {row.subscription_id ? (
-                      <div>
-                        <div>#{row.subscription_id}</div>
-                        <div>Цена: {row.subscription_price_per_lesson ?? 'не указана'}</div>
-                        <div>Остаток: {row.subscription_balance_lessons ?? 'не указан'}</div>
-                      </div>
-                    ) : (
-                      <div style={{ color: '#b71c1c' }}>{row.charge_block_reason}</div>
-                    )}
-                  </td>
-                  <td>
-                    <textarea
-                      rows="2"
-                      value={row.comment}
-                      onChange={(e) => handleChange(row.student_id, 'comment', e.target.value)}
-                      disabled={!canMarkAttendance || saving}
-                      style={{ width: '100%' }}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose} disabled={saving}>Отмена</button>
-          <button type="button" onClick={handleSave} disabled={saving || loading || !rows.length || !canMarkAttendance}>
-            {saving ? 'Сохранение...' : 'Сохранить посещаемость'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export default CalendarGrid;
+
+
+

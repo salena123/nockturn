@@ -5,12 +5,18 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
+from core.access import require_admin
 from core.deps import get_current_user, get_db
+from core.entity_changes import log_entity_change, log_model_updates
+from models.discipline import Discipline
+from models.entityChangeLog import EntityChangeLog
 from models.lesson import Lesson
 from models.lessonIssue import LessonIssue
 from models.lessonStudent import LessonStudent
+from models.room import Room
 from models.scheduleEvent import ScheduleEvent
 from models.scheduleHistory import ScheduleHistory
 from models.scheduleRecurring import ScheduleRecurring
@@ -20,6 +26,7 @@ from models.user import User
 from schemas.schedule import (
     LessonCreate,
     LessonUpdate,
+    BulkTeacherRescheduleRequest,
     ScheduleEntryCreate,
     ScheduleEventCreate,
     ScheduleEventUpdate,
@@ -34,6 +41,7 @@ WORKDAY_END_HOUR = 23
 LUNCH_BREAK_START = "13:00"
 LUNCH_BREAK_END = "15:00"
 MAX_RECURRING_OCCURRENCES = 366
+DISALLOWED_STUDENT_STATUSES_FOR_SCHEDULE = {"заморожен", "отказался"}
 
 
 def format_conflict_time(start_time: datetime, end_time: datetime) -> str:
@@ -69,6 +77,14 @@ def ensure_teacher_can_manage_event(
         raise HTTPException(
             status_code=403,
             detail="Недостаточно прав для изменения этого занятия",
+        )
+
+
+def ensure_event_not_started(event: ScheduleEvent) -> None:
+    if event.start_time <= datetime.now():
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя перенести или изменить занятие, которое уже началось или прошло",
         )
 
 
@@ -473,6 +489,20 @@ def validate_students_for_lesson(
             detail=f"Ученики не найдены: {', '.join(str(student_id) for student_id in missing_ids)}",
         )
 
+    blocked_students = [
+        student.fio
+        for student in existing_students
+        if str(student.status or "").strip().lower() in DISALLOWED_STUDENT_STATUSES_FOR_SCHEDULE
+    ]
+    if blocked_students:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Нельзя добавить в расписание учеников со статусом "
+                f"«заморожен» или «отказался»: {', '.join(blocked_students)}"
+            ),
+        )
+
     schedule = db.query(ScheduleEvent).filter(ScheduleEvent.id == schedule_id).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Событие расписания для урока не найдено")
@@ -564,9 +594,114 @@ def create_schedule_history_record(
             changed_by=changed_by,
             old_start=old_start,
             new_start=new_start,
-            changed_at=datetime.utcnow(),
+            changed_at=datetime.now(),
         )
     )
+
+
+def get_teacher_display(db: Session, teacher_id: int | None) -> str | None:
+    if teacher_id is None:
+        return None
+    teacher = (
+        db.query(Teacher)
+        .options(joinedload(Teacher.user))
+        .filter(Teacher.id == teacher_id)
+        .first()
+    )
+    if not teacher:
+        return str(teacher_id)
+    if teacher.user:
+        return teacher.user.full_name or teacher.user.login or str(teacher.id)
+    return teacher.specialization or str(teacher.id)
+
+
+def get_room_display(db: Session, room_id: int | None) -> str | None:
+    if room_id is None:
+        return None
+    room = db.query(Room).filter(Room.id == room_id).first()
+    return room.name if room else str(room_id)
+
+
+def get_discipline_display(db: Session, discipline_id: int | None) -> str | None:
+    if discipline_id is None:
+        return None
+    discipline = db.query(Discipline).filter(Discipline.id == discipline_id).first()
+    return discipline.name if discipline else str(discipline_id)
+
+
+def get_student_names(db: Session, student_ids: list[int]) -> list[str]:
+    normalized_ids = normalize_student_ids(student_ids)
+    if not normalized_ids:
+        return []
+    students = db.query(Student).filter(Student.id.in_(normalized_ids)).all()
+    names_by_id = {student.id: student.fio for student in students}
+    return [names_by_id.get(student_id, str(student_id)) for student_id in normalized_ids]
+
+
+def serialize_student_names(db: Session, student_ids: list[int]) -> str | None:
+    names = get_student_names(db, student_ids)
+    return ", ".join(names) if names else None
+
+
+def get_schedule_field_display(db: Session, field_name: str, value):
+    if field_name == "teacher_id":
+        return get_teacher_display(db, value)
+    if field_name == "room_id":
+        return get_room_display(db, value)
+    if field_name == "discipline_id":
+        return get_discipline_display(db, value)
+    return value
+
+
+def get_lesson_field_display(db: Session, field_name: str, value):
+    if field_name == "student_ids":
+        return serialize_student_names(db, value or [])
+    return value
+
+
+def build_schedule_event_changes(db: Session, event: ScheduleEvent, update_data: dict) -> dict[str, tuple[object, object]]:
+    changes: dict[str, tuple[object, object]] = {}
+    tracked_fields = ("teacher_id", "discipline_id", "room_id", "start_time", "end_time", "type")
+    for field_name in tracked_fields:
+        if field_name not in update_data:
+            continue
+        old_value = getattr(event, field_name)
+        new_value = update_data[field_name]
+        if old_value == new_value:
+            continue
+        changes[field_name] = (
+            get_schedule_field_display(db, field_name, old_value),
+            get_schedule_field_display(db, field_name, new_value),
+        )
+    return changes
+
+
+def build_lesson_changes(
+    db: Session,
+    lesson: Lesson,
+    update_data: dict,
+    student_ids: list[int] | None,
+) -> dict[str, tuple[object, object]]:
+    changes: dict[str, tuple[object, object]] = {}
+
+    for field_name in ("lesson_type", "max_students"):
+        if field_name not in update_data:
+            continue
+        old_value = getattr(lesson, field_name)
+        new_value = update_data[field_name]
+        if old_value != new_value:
+            changes[field_name] = (old_value, new_value)
+
+    if student_ids is not None:
+        old_student_ids = [link.student_id for link in lesson.lesson_students]
+        new_student_ids = normalize_student_ids(student_ids)
+        if normalize_student_ids(old_student_ids) != new_student_ids:
+            changes["student_ids"] = (
+                get_lesson_field_display(db, "student_ids", old_student_ids),
+                get_lesson_field_display(db, "student_ids", new_student_ids),
+            )
+
+    return changes
 
 
 def build_event_payloads_for_series(
@@ -651,6 +786,46 @@ def create_schedule_entry_series(
                 )
             )
 
+        log_entity_change(
+            db,
+            actor_user_id=current_user.id,
+            entity="schedule_event",
+            entity_id=db_event.id,
+            action="create",
+            old_value=None,
+            new_value=(
+                f"Создано занятие: {payload['start_time'].strftime('%d.%m.%Y %H:%M')} - "
+                f"{payload['end_time'].strftime('%H:%M')}"
+            ),
+        )
+        log_model_updates(
+            db,
+            actor_user_id=current_user.id,
+            entity="schedule_event",
+            entity_id=db_event.id,
+            changes={
+                "teacher_id": (None, get_teacher_display(db, payload["teacher_id"])),
+                "discipline_id": (None, get_discipline_display(db, payload["discipline_id"])),
+                "room_id": (None, get_room_display(db, payload["room_id"])),
+                "type": (None, payload["type"]),
+                "start_time": (None, payload["start_time"]),
+                "end_time": (None, payload["end_time"]),
+            },
+            action="create",
+        )
+        log_model_updates(
+            db,
+            actor_user_id=current_user.id,
+            entity="lesson",
+            entity_id=db_lesson.id,
+            changes={
+                "lesson_type": (None, data.lesson_type),
+                "max_students": (None, data.max_students),
+                "student_ids": (None, serialize_student_names(db, normalized_ids)),
+            },
+            action="create",
+        )
+
         recurrence = data.recurrence or ScheduleRecurringRule()
         if recurrence.repeat_type != "none":
             db.add(
@@ -718,6 +893,12 @@ def build_ics_text(events: list[dict]) -> str:
         "CALSCALE:GREGORIAN",
     ]
     now_stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+    if any(event.start_time <= datetime.now() for event in events):
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя массово перенести занятия, которые уже начались или прошли",
+        )
 
     for event in events:
         start_time = event["start_time"].strftime("%Y%m%dT%H%M%S")
@@ -970,9 +1151,11 @@ def update_schedule_event(
         raise HTTPException(status_code=404, detail="Событие расписания не найдено")
 
     ensure_teacher_can_manage_event(db, current_user, db_event)
+    ensure_event_not_started(db_event)
 
     update_data = event_data.model_dump(exclude_unset=True, exclude={"ignore_conflicts"})
     ignore_conflicts = event_data.ignore_conflicts
+    event_changes = build_schedule_event_changes(db, db_event, update_data) if update_data else {}
     if update_data:
         merged_data = {
             "teacher_id": update_data.get("teacher_id", db_event.teacher_id),
@@ -1007,6 +1190,13 @@ def update_schedule_event(
             old_start,
             db_event.start_time,
         )
+        log_model_updates(
+            db,
+            actor_user_id=current_user.id,
+            entity="schedule_event",
+            entity_id=db_event.id,
+            changes=event_changes,
+        )
 
     db.commit()
     db.refresh(db_event)
@@ -1019,11 +1209,42 @@ def delete_schedule_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    db_event = db.query(ScheduleEvent).filter(ScheduleEvent.id == event_id).first()
+    db_event = (
+        db.query(ScheduleEvent)
+        .options(
+            joinedload(ScheduleEvent.lessons).joinedload(Lesson.lesson_students).joinedload(LessonStudent.student),
+            joinedload(ScheduleEvent.teacher).joinedload(Teacher.user),
+            joinedload(ScheduleEvent.discipline),
+            joinedload(ScheduleEvent.room),
+        )
+        .filter(ScheduleEvent.id == event_id)
+        .first()
+    )
     if not db_event:
         raise HTTPException(status_code=404, detail="Событие расписания не найдено")
 
     ensure_teacher_can_manage_event(db, current_user, db_event)
+
+    student_names = []
+    if db_event.lessons:
+        for link in db_event.lessons[0].lesson_students:
+            if link.student:
+                student_names.append(link.student.fio)
+
+    log_entity_change(
+        db,
+        actor_user_id=current_user.id,
+        entity="schedule_event",
+        entity_id=db_event.id,
+        action="delete",
+        old_value=(
+            f"{db_event.start_time.strftime('%d.%m.%Y %H:%M')} - {db_event.end_time.strftime('%H:%M')}, "
+            f"преподаватель: {db_event.teacher.user.full_name if db_event.teacher and db_event.teacher.user else '—'}, "
+            f"кабинет: {db_event.room.name if db_event.room else '—'}, "
+            f"ученики: {', '.join(student_names) if student_names else '—'}"
+        ),
+        new_value=None,
+    )
 
     lessons = db.query(Lesson).filter(Lesson.schedule_id == event_id).all()
     for lesson in lessons:
@@ -1037,6 +1258,98 @@ def delete_schedule_event(
     return {"message": "Событие расписания удалено"}
 
 
+@router.post("/bulk-reschedule")
+def bulk_reschedule_teacher_lessons(
+    payload: BulkTeacherRescheduleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin(current_user)
+
+    teacher = db.query(Teacher).filter(Teacher.id == payload.teacher_id).first()
+    if not teacher:
+        raise HTTPException(status_code=404, detail="Преподаватель не найден")
+
+    source_start = datetime.combine(payload.source_date, time.min)
+    source_end = source_start + timedelta(days=1)
+    day_shift = (payload.target_date - payload.source_date).days
+
+    events = (
+        db.query(ScheduleEvent)
+        .options(
+            joinedload(ScheduleEvent.lessons).joinedload(Lesson.lesson_students),
+            joinedload(ScheduleEvent.teacher).joinedload(Teacher.user),
+            joinedload(ScheduleEvent.room),
+            joinedload(ScheduleEvent.discipline),
+        )
+        .filter(ScheduleEvent.teacher_id == payload.teacher_id)
+        .filter(ScheduleEvent.start_time >= source_start)
+        .filter(ScheduleEvent.start_time < source_end)
+        .all()
+    )
+
+    if not events:
+        raise HTTPException(status_code=404, detail="На выбранную дату у преподавателя нет занятий")
+
+    if any(event.start_time <= datetime.now() for event in events):
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя массово перенести занятия, которые уже начались или прошли",
+        )
+
+    for event in events:
+        update_data = {
+            "start_time": event.start_time + timedelta(days=day_shift),
+            "end_time": event.end_time + timedelta(days=day_shift),
+        }
+        merged_data = {
+            "teacher_id": event.teacher_id,
+            "discipline_id": event.discipline_id,
+            "room_id": event.room_id,
+            "start_time": update_data["start_time"],
+            "end_time": update_data["end_time"],
+            "type": event.type,
+        }
+        conflicts = build_schedule_conflicts(db, merged_data, event.id)
+        validate_event_student_conflicts_on_update(db, event, update_data, payload.ignore_conflicts)
+        if not payload.ignore_conflicts and (conflicts["teacher_conflicts"] or conflicts["room_conflicts"]):
+            raise_detailed_conflict(
+                "Обнаружены конфликты при массовом переносе занятий преподавателя.",
+                teacher_conflicts=conflicts["teacher_conflicts"],
+                room_conflicts=conflicts["room_conflicts"],
+            )
+
+    for event in events:
+        old_start = event.start_time
+        update_data = {
+            "start_time": event.start_time + timedelta(days=day_shift),
+            "end_time": event.end_time + timedelta(days=day_shift),
+        }
+        event_changes = build_schedule_event_changes(db, event, update_data)
+        event.start_time = update_data["start_time"]
+        event.end_time = update_data["end_time"]
+        for lesson in event.lessons:
+            lesson.lesson_date = event.start_time.date()
+
+        create_schedule_history_record(
+            db,
+            event.id,
+            current_user.id,
+            old_start,
+            event.start_time,
+        )
+        log_model_updates(
+            db,
+            actor_user_id=current_user.id,
+            entity="schedule_event",
+            entity_id=event.id,
+            changes=event_changes,
+        )
+
+    db.commit()
+    return {"message": "Занятия преподавателя успешно перенесены", "count": len(events)}
+
+
 @router.get("/history")
 def get_schedule_history(
     event_id: int | None = None,
@@ -1045,7 +1358,40 @@ def get_schedule_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = (
+    teacher = get_current_teacher(db, current_user)
+
+    schedule_query = get_scoped_events_query(db, current_user)
+    if event_id:
+        schedule_query = schedule_query.filter(ScheduleEvent.id == event_id)
+
+    schedule_events = schedule_query.all()
+    schedule_ids = [event.id for event in schedule_events]
+    lesson_ids = [event.lessons[0].id for event in schedule_events if event.lessons]
+
+    if event_id and not schedule_ids:
+        return []
+
+    entity_query = db.query(EntityChangeLog).options(joinedload(EntityChangeLog.actor_user))
+    if start_date:
+        entity_query = entity_query.filter(EntityChangeLog.created_at >= datetime.fromisoformat(start_date))
+    if end_date:
+        entity_query = entity_query.filter(EntityChangeLog.created_at <= datetime.fromisoformat(end_date))
+
+    if schedule_ids or lesson_ids:
+        filters = []
+        if schedule_ids:
+            filters.append(
+                (EntityChangeLog.entity == "schedule_event") & (EntityChangeLog.entity_id.in_(schedule_ids))
+            )
+        if lesson_ids:
+            filters.append(
+                (EntityChangeLog.entity == "lesson") & (EntityChangeLog.entity_id.in_(lesson_ids))
+            )
+        entity_logs = entity_query.filter(or_(*filters)).all()
+    else:
+        entity_logs = []
+
+    legacy_query = (
         db.query(ScheduleHistory)
         .options(
             joinedload(ScheduleHistory.schedule)
@@ -1056,46 +1402,69 @@ def get_schedule_history(
             joinedload(ScheduleHistory.changed_by_user),
         )
     )
-
     if event_id:
-        query = query.filter(ScheduleHistory.schedule_id == event_id)
+        legacy_query = legacy_query.filter(ScheduleHistory.schedule_id == event_id)
+    elif teacher:
+        legacy_query = legacy_query.join(ScheduleHistory.schedule).filter(ScheduleEvent.teacher_id == teacher.id)
     if start_date:
-        query = query.filter(ScheduleHistory.changed_at >= datetime.fromisoformat(start_date))
+        legacy_query = legacy_query.filter(ScheduleHistory.changed_at >= datetime.fromisoformat(start_date))
     if end_date:
-        query = query.filter(ScheduleHistory.changed_at <= datetime.fromisoformat(end_date))
+        legacy_query = legacy_query.filter(ScheduleHistory.changed_at <= datetime.fromisoformat(end_date))
 
-    teacher = get_current_teacher(db, current_user)
-    if teacher:
-        query = query.join(ScheduleHistory.schedule).filter(ScheduleEvent.teacher_id == teacher.id)
+    legacy_records = legacy_query.all()
 
-    history_records = query.order_by(ScheduleHistory.changed_at.desc(), ScheduleHistory.id.desc()).all()
-
-    return [
+    history_rows = [
         {
-            "id": record.id,
-            "schedule_id": record.schedule_id,
-            "changed_at": record.changed_at,
-            "old_start": record.old_start,
-            "new_start": record.new_start,
+            "id": f"entity-{record.id}",
+            "schedule_id": event_id if record.entity == "lesson" and event_id else record.entity_id,
+            "entity": record.entity,
+            "action": record.action,
+            "field_name": record.field_name,
+            "changed_at": record.created_at,
+            "old_value": record.old_value,
+            "new_value": record.new_value,
             "changed_by": {
-                "id": record.changed_by_user.id,
-                "full_name": record.changed_by_user.full_name,
-                "login": record.changed_by_user.login,
+                "id": record.actor_user.id,
+                "full_name": record.actor_user.full_name,
+                "login": record.actor_user.login,
             }
-            if record.changed_by_user
-            else None,
-            "teacher_name": record.schedule.teacher.user.full_name
-            if record.schedule and record.schedule.teacher and record.schedule.teacher.user
-            else None,
-            "discipline_name": record.schedule.discipline.name
-            if record.schedule and record.schedule.discipline
-            else None,
-            "room_name": record.schedule.room.name
-            if record.schedule and record.schedule.room
+            if record.actor_user
             else None,
         }
-        for record in history_records
+        for record in entity_logs
     ]
+
+    history_rows.extend(
+        [
+            {
+                "id": f"legacy-{record.id}",
+                "schedule_id": record.schedule_id,
+                "entity": "schedule_event",
+                "action": "move",
+                "field_name": "start_time",
+                "changed_at": record.changed_at,
+                "old_value": record.old_start.isoformat() if record.old_start else None,
+                "new_value": record.new_start.isoformat() if record.new_start else None,
+                "changed_by": {
+                    "id": record.changed_by_user.id,
+                    "full_name": record.changed_by_user.full_name,
+                    "login": record.changed_by_user.login,
+                }
+                if record.changed_by_user
+                else None,
+            }
+            for record in legacy_records
+        ]
+    )
+
+    history_rows.sort(
+        key=lambda row: (
+            row["changed_at"] or datetime.min,
+            str(row["id"]),
+        ),
+        reverse=True,
+    )
+    return history_rows
 
 
 @router.get("/non-working-periods")
@@ -1234,6 +1603,18 @@ def create_lesson(
     db.add(db_lesson)
     db.flush()
     sync_lesson_students(db, db_lesson, student_ids)
+    log_model_updates(
+        db,
+        actor_user_id=current_user.id,
+        entity="lesson",
+        entity_id=db_lesson.id,
+        changes={
+            "lesson_type": (None, db_lesson.lesson_type),
+            "max_students": (None, db_lesson.max_students),
+            "student_ids": (None, serialize_student_names(db, student_ids)),
+        },
+        action="create",
+    )
     db.commit()
     db.refresh(db_lesson)
     return db_lesson
@@ -1254,12 +1635,21 @@ def update_lesson(
 
     update_data = lesson_data.model_dump(exclude_unset=True)
     student_ids = update_data.pop("student_ids", None)
+    lesson_changes = build_lesson_changes(db, db_lesson, update_data, student_ids)
 
     for field, value in update_data.items():
         setattr(db_lesson, field, value)
 
     if student_ids is not None:
         sync_lesson_students(db, db_lesson, student_ids)
+
+    log_model_updates(
+        db,
+        actor_user_id=current_user.id,
+        entity="lesson",
+        entity_id=db_lesson.id,
+        changes=lesson_changes,
+    )
 
     db.commit()
     db.refresh(db_lesson)

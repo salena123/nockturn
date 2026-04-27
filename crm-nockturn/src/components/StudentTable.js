@@ -11,6 +11,7 @@ const StudentTable = ({
   onOpenSubscriptions,
   onOpenHistory,
   onOpenWaitlist,
+  onExport,
 }) => {
   if (!students.length) {
     return <div>Ученики не найдены.</div>;
@@ -25,8 +26,8 @@ const StudentTable = ({
           <th>Возраст</th>
           <th>Телефон</th>
           <th>Статус</th>
-          <th>Уровень</th>
-          <th>Ответственный</th>
+          <th>Уровень подготовки</th>
+          <th>Ответственное лицо</th>
           <th>Комментарий</th>
           <th>Действия</th>
         </tr>
@@ -36,11 +37,11 @@ const StudentTable = ({
           <tr key={student.id}>
             <td>{student.id}</td>
             <td>{student.fio}</td>
-            <td>{student.age ?? ''}</td>
-            <td>{student.phone || ''}</td>
-            <td>{student.status || ''}</td>
-            <td>{student.level || ''}</td>
-            <td>{student.parent_name || ''}</td>
+            <td>{student.age ?? '—'}</td>
+            <td>{student.phone || '—'}</td>
+            <td>{student.status_label || student.status || '—'}</td>
+            <td>{student.level_label || student.level || '—'}</td>
+            <td>{student.parent_name || '—'}</td>
             <td>
               {student.comment?.trim() ? student.comment : 'Комментарий не указан'}{' '}
               <button type="button" onClick={() => onEditComment(student)}>
@@ -58,13 +59,16 @@ const StudentTable = ({
                 Заметки
               </button>{' '}
               <button type="button" onClick={() => onOpenSubscriptions(student)}>
-                Договоры
+                Абонементы
               </button>{' '}
               <button type="button" onClick={() => onOpenHistory(student)}>
                 История
               </button>{' '}
               <button type="button" onClick={() => onOpenWaitlist(student)}>
                 Лист ожидания
+              </button>{' '}
+              <button type="button" onClick={() => onExport(student)}>
+                Экспорт
               </button>{' '}
               <button type="button" onClick={() => onDelete(student)}>
                 Удалить

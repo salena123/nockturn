@@ -13,14 +13,28 @@ const EMPTY_FORM = {
   generate_password: false,
 };
 
+const ROLE_LABELS = {
+  admin: 'Администратор',
+  teacher: 'Преподаватель',
+  superadmin: 'Суперадминистратор',
+};
 
-const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUserSuccess, onCancel }) => {
+const getRoleLabel = (roleName) => ROLE_LABELS[roleName] || roleName || '';
+
+const UserForm = ({
+  user,
+  roles,
+  currentUser,
+  onUserCreated,
+  onUserUpdated,
+  onUserSuccess,
+  onCancel,
+}) => {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [generatedPassword, setGeneratedPassword] = useState('');
 
-  const availableRoles = roles.filter(role => role.name !== 'superadmin');
+  const availableRoles = roles.filter((role) => role.name !== 'superadmin');
 
   useEffect(() => {
     if (user?.id) {
@@ -34,13 +48,11 @@ const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUs
         hire_date: user.hire_date || '',
         generate_password: false,
       });
-      setGeneratedPassword('');
       setError('');
       return;
     }
 
     setFormData(EMPTY_FORM);
-    setGeneratedPassword('');
     setError('');
   }, [user]);
 
@@ -56,7 +68,6 @@ const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUs
     event.preventDefault();
     setLoading(true);
     setError('');
-    setGeneratedPassword('');
 
     if (!user?.id && !formData.generate_password && formData.password) {
       if (formData.password.length < 8) {
@@ -96,22 +107,21 @@ const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUs
             password: formData.password || null,
             generate_password: formData.generate_password,
           });
-                    currentGeneratedPassword = resetResponse.data.generated_password || '';
-          setGeneratedPassword(currentGeneratedPassword);
+          currentGeneratedPassword = resetResponse.data.generated_password || '';
         }
 
         const updatedUserData = {
           login: formData.login,
           full_name: formData.full_name,
           phone: formData.phone,
-          role: availableRoles.find(r => r.id === parseInt(formData.role_id))?.name,
-          is_active: formData.is_active
+          role: availableRoles.find((role) => role.id === Number(formData.role_id))?.name,
+          is_active: formData.is_active,
         };
-        
-                if (onUserSuccess) {
+
+        if (onUserSuccess) {
           onUserSuccess(updatedUserData, currentGeneratedPassword, true);
         }
-        
+
         if (onUserUpdated) {
           onUserUpdated();
         }
@@ -128,20 +138,19 @@ const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUs
         };
         const response = await api.post('/api/users', userData);
         const currentGeneratedPassword = response.data.generated_password || '';
-        setGeneratedPassword(currentGeneratedPassword);
-        
+
         const newUserData = {
           login: formData.login,
           full_name: formData.full_name,
           phone: formData.phone,
-          role: availableRoles.find(r => r.id === parseInt(formData.role_id))?.name,
-          is_active: formData.is_active
+          role: availableRoles.find((role) => role.id === Number(formData.role_id))?.name,
+          is_active: formData.is_active,
         };
-        
-                if (onUserSuccess) {
+
+        if (onUserSuccess) {
           onUserSuccess(newUserData, currentGeneratedPassword, false);
         }
-        
+
         if (onUserCreated) {
           onUserCreated();
         }
@@ -149,18 +158,18 @@ const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUs
     } catch (err) {
       if (err.response?.data?.detail && Array.isArray(err.response.data.detail)) {
         const validationErrors = err.response.data.detail;
-        const errorMessages = validationErrors.map(error => {
-          const fieldName = error.loc[1];
-          const message = error.msg;
-          
+        const errorMessages = validationErrors.map((validationError) => {
+          const fieldName = validationError.loc[1];
+          const message = validationError.msg;
+
           if (message.includes('at least 3 characters')) {
-            return `Логин - минимум 3 символа`;
+            return 'Логин: минимум 3 символа';
           }
           if (message.includes('at least 8 characters')) {
-            return `Пароль - минимум 8 символов`;
+            return 'Пароль: минимум 8 символов';
           }
           if (message.includes('String should have at least')) {
-            return `${fieldName} - минимум ${error.ctx?.min_length || ''} символов`;
+            return `${fieldName}: минимум ${validationError.ctx?.min_length || ''} символов`;
           }
           return message;
         });
@@ -226,11 +235,11 @@ const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUs
               <div>
                 <input
                   type="text"
-                  value={availableRoles.find(r => r.id === parseInt(formData.role_id))?.name || ''}
+                  value={getRoleLabel(availableRoles.find((role) => role.id === Number(formData.role_id))?.name)}
                   disabled
                   style={{ backgroundColor: '#f5f5f5', color: '#666' }}
                 />
-                </div>
+              </div>
             ) : (
               <select
                 name="role_id"
@@ -241,7 +250,7 @@ const UserForm = ({ user, roles, currentUser, onUserCreated, onUserUpdated, onUs
                 <option value="">Выберите роль</option>
                 {availableRoles.map((role) => (
                   <option key={role.id} value={role.id}>
-                    {role.name}
+                    {getRoleLabel(role.name)}
                   </option>
                 ))}
               </select>

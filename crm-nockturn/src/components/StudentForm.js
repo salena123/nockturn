@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
+
 import api from '../api';
+import { formatServerDateTime } from '../utils/dateTime';
 
 
 const EMPTY_FORM = {
@@ -18,14 +20,36 @@ const EMPTY_FORM = {
   birth_date: '',
 };
 
-const LEVELS = ['начальный', 'средний', 'продвинутый'];
-const STATUSES = ['потенциальный', 'активный', 'заморожен', 'отказался'];
+const LEVEL_OPTIONS = [
+  { value: 'начальный', label: 'Начальный' },
+  { value: 'средний', label: 'Средний' },
+  { value: 'продвинутый', label: 'Продвинутый' },
+];
+
+const STATUS_OPTIONS = [
+  { value: 'потенциальный', label: 'Потенциальный' },
+  { value: 'активный', label: 'Активный' },
+  { value: 'заморожен', label: 'Заморожен' },
+  { value: 'отказался', label: 'Отказался' },
+];
+
+const normalizeStudentStatus = (status) => {
+  if (!status) {
+    return 'потенциальный';
+  }
+
+  return status === 'новый' ? 'потенциальный' : status;
+};
 
 
-const StudentForm = ({ student, onSave, onCancel }) => {
+const BLOCKED_STATUSES = new Set(['заморожен', 'отказался']);
+
+
+const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [statusWarning, setStatusWarning] = useState(null);
 
   useEffect(() => {
     if (student?.id) {
@@ -33,23 +57,25 @@ const StudentForm = ({ student, onSave, onCancel }) => {
         fio: student.fio || '',
         phone: student.phone || '',
         email: student.email || '',
-        has_parent: student.has_parent || false,
+        has_parent: Boolean(student.has_parent),
         parent_name: student.parent_name || '',
         parent_phone: student.parent?.phone || '',
         parent_telegram_id: student.parent?.telegram_id ? String(student.parent.telegram_id) : '',
         address: student.address || '',
         level: student.level || '',
-        status: student.status || 'потенциальный',
+        status: normalizeStudentStatus(student.status),
         comment: student.comment || '',
         first_contact_date: student.first_contact_date || '',
         birth_date: student.birth_date || '',
       });
       setError('');
+      setStatusWarning(null);
       return;
     }
 
     setFormData(EMPTY_FORM);
     setError('');
+    setStatusWarning(null);
   }, [student]);
 
   const handleChange = (event) => {
@@ -60,8 +86,7 @@ const StudentForm = ({ student, onSave, onCancel }) => {
     }));
   };
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const submitStudent = async ({ skipStatusWarning = false } = {}) => {
     setLoading(true);
     setError('');
 
@@ -85,12 +110,32 @@ const StudentForm = ({ student, onSave, onCancel }) => {
         birth_date: formData.birth_date || null,
       };
 
+      const isAdminLike = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+      const previousStatus = normalizeStudentStatus(student?.status);
+      const nextStatus = normalizeStudentStatus(formData.status);
+      const movingToBlockedStatus =
+        Boolean(student?.id) &&
+        isAdminLike &&
+        BLOCKED_STATUSES.has(nextStatus) &&
+        previousStatus !== nextStatus;
+
+      if (movingToBlockedStatus && !skipStatusWarning) {
+        const summaryResponse = await api.get(`/api/students/${student.id}/upcoming-lessons-summary`);
+        const summary = summaryResponse.data;
+        if (summary?.upcoming_lessons_count > 0) {
+          setStatusWarning(summary);
+          setLoading(false);
+          return;
+        }
+      }
+
       if (student?.id) {
         await api.put(`/api/students/${student.id}`, payload);
       } else {
         await api.post('/api/students', payload);
       }
 
+      setStatusWarning(null);
       onSave();
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сохранить ученика');
@@ -99,9 +144,47 @@ const StudentForm = ({ student, onSave, onCancel }) => {
     }
   };
 
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    await submitStudent();
+  };
+
   return (
     <div>
       <h3>{student?.id ? 'Редактирование ученика' : 'Новый ученик'}</h3>
+
+      {statusWarning && (
+        <div style={{ marginBottom: 16, padding: 12, border: '1px solid #d39e00', backgroundColor: '#fff3cd' }}>
+          <strong>Предупреждение</strong>
+          <div style={{ marginTop: 8 }}>
+            У ученика есть будущие занятия: {statusWarning.upcoming_lessons_count}.
+            При смене статуса на {formData.status === 'заморожен' ? '«Заморожен»' : '«Отказался»'} занятия не удалятся автоматически.
+          </div>
+          {statusWarning.items?.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              Ближайшие занятия:
+              <ul style={{ marginTop: 6, marginBottom: 6 }}>
+                {statusWarning.items.map((item) => (
+                  <li key={item.lesson_id}>
+                    {formatServerDateTime(item.start_time)}
+                    {item.discipline_name ? `, ${item.discipline_name}` : ''}
+                    {item.teacher_name ? `, ${item.teacher_name}` : ''}
+                    {item.room_name ? `, кабинет ${item.room_name}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div>
+            <button type="button" onClick={() => submitStudent({ skipStatusWarning: true })} disabled={loading}>
+              Все равно сохранить
+            </button>{' '}
+            <button type="button" onClick={() => setStatusWarning(null)} disabled={loading}>
+              Вернуться к редактированию
+            </button>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <div>
@@ -116,13 +199,18 @@ const StudentForm = ({ student, onSave, onCancel }) => {
           <label>
             Дата рождения
             <br />
-            <input type="date" name="birth_date" value={formData.birth_date} onChange={handleChange} />
+            <input
+              type="date"
+              name="birth_date"
+              value={formData.birth_date}
+              onChange={handleChange}
+            />
           </label>
         </div>
 
         <div>
           <label>
-            Телефон
+            Основной телефон
             <br />
             <input type="text" name="phone" value={formData.phone} onChange={handleChange} />
           </label>
@@ -138,7 +226,7 @@ const StudentForm = ({ student, onSave, onCancel }) => {
 
         <div>
           <label>
-            Адрес
+            Адрес проживания
             <br />
             <textarea name="address" value={formData.address} onChange={handleChange} rows="3" />
           </label>
@@ -150,9 +238,9 @@ const StudentForm = ({ student, onSave, onCancel }) => {
             <br />
             <select name="level" value={formData.level} onChange={handleChange}>
               <option value="">Выберите уровень</option>
-              {LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {level}
+              {LEVEL_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
@@ -161,12 +249,12 @@ const StudentForm = ({ student, onSave, onCancel }) => {
 
         <div>
           <label>
-            Статус
+            Статус ученика
             <br />
             <select name="status" value={formData.status} onChange={handleChange}>
-              {STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
@@ -202,7 +290,7 @@ const StudentForm = ({ student, onSave, onCancel }) => {
               checked={formData.has_parent}
               onChange={handleChange}
             />
-            Есть ответственное лицо
+            {' '}Есть ответственное лицо
           </label>
         </div>
 
@@ -224,7 +312,7 @@ const StudentForm = ({ student, onSave, onCancel }) => {
 
             <div>
               <label>
-                Телефон ответственного
+                Телефон ответственного лица
                 <br />
                 <input
                   type="text"
@@ -237,7 +325,7 @@ const StudentForm = ({ student, onSave, onCancel }) => {
 
             <div>
               <label>
-                Telegram ID ответственного
+                Telegram ID ответственного лица
                 <br />
                 <input
                   type="number"

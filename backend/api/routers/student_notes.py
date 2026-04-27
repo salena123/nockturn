@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from core.access import require_staff
 from core.deps import get_current_user, get_db
@@ -12,6 +12,27 @@ from schemas.student_note import StudentNoteCreate, StudentNoteResponse, Student
 
 
 router = APIRouter(prefix="/api")
+
+
+def get_actor_display_name(actor_user: User | None) -> str | None:
+    if actor_user is None:
+        return None
+    return actor_user.full_name or actor_user.login
+
+
+def serialize_history_item(item: EntityChangeLog) -> dict:
+    return {
+        "id": item.id,
+        "actor_user_id": item.actor_user_id,
+        "actor_user_name": get_actor_display_name(item.actor_user),
+        "entity": item.entity,
+        "entity_id": item.entity_id,
+        "field_name": item.field_name,
+        "old_value": item.old_value,
+        "new_value": item.new_value,
+        "action": item.action,
+        "created_at": item.created_at,
+    }
 
 
 def get_student_or_404(db: Session, student_id: int) -> Student:
@@ -131,10 +152,13 @@ def get_student_notes_history(
     ]
     if not note_ids:
         return []
-    return (
+
+    history_items = (
         db.query(EntityChangeLog)
+        .options(joinedload(EntityChangeLog.actor_user))
         .filter(EntityChangeLog.entity == "student_note")
         .filter(EntityChangeLog.entity_id.in_(note_ids))
         .order_by(EntityChangeLog.created_at.desc(), EntityChangeLog.id.desc())
         .all()
     )
+    return [serialize_history_item(item) for item in history_items]

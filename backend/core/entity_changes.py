@@ -8,6 +8,20 @@ from sqlalchemy.orm import Session
 from models.entityChangeLog import EntityChangeLog
 
 
+def normalize_json_value(value: Any) -> Any:
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, dict):
+        return {key: normalize_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [normalize_json_value(item) for item in value]
+    return value
+
+
 def serialize_change_value(value: Any) -> str | None:
     if value is None:
         return None
@@ -18,7 +32,7 @@ def serialize_change_value(value: Any) -> str | None:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False)
+        return json.dumps(normalize_json_value(value), ensure_ascii=False)
     return str(value)
 
 

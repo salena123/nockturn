@@ -1,6 +1,10 @@
-from datetime import date
+from datetime import date, datetime
+from io import BytesIO
+from xml.sax.saxutils import escape
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
 from core.access import require_admin, require_staff
@@ -23,6 +27,111 @@ router = APIRouter(prefix="/api")
 
 ALLOWED_LEVELS = {"начальный", "средний", "продвинутый"}
 ALLOWED_STATUSES = {"потенциальный", "активный", "заморожен", "отказался"}
+STATUS_ALIASES = {"новый": "потенциальный"}
+
+
+def build_xlsx_bytes(rows: list[list[str | int | float]]) -> bytes:
+    content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>"""
+
+    rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>"""
+
+    workbook = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Student" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>"""
+
+    workbook_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"""
+
+    styles = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>"""
+
+    app = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
+ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>Nockturn CRM</Application>
+</Properties>"""
+
+    created = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    core = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+ xmlns:dc="http://purl.org/dc/elements/1.1/"
+ xmlns:dcterms="http://purl.org/dc/terms/"
+ xmlns:dcmitype="http://purl.org/dc/dcmitype/"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:creator>Nockturn CRM</dc:creator>
+  <cp:lastModifiedBy>Nockturn CRM</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">{created}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">{created}</dcterms:modified>
+</cp:coreProperties>"""
+
+    def column_name(index: int) -> str:
+        result = ""
+        current = index
+        while current >= 0:
+            result = chr(current % 26 + 65) + result
+            current = current // 26 - 1
+        return result
+
+    sheet_rows: list[str] = []
+    for row_index, row in enumerate(rows, start=1):
+        cells: list[str] = []
+        for column_index, value in enumerate(row):
+            cell_ref = f"{column_name(column_index)}{row_index}"
+            value_str = escape("" if value is None else str(value))
+            cells.append(f'<c r="{cell_ref}" t="inlineStr"><is><t>{value_str}</t></is></c>')
+        sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+
+    worksheet = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    {''.join(sheet_rows)}
+  </sheetData>
+</worksheet>"""
+
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", ZIP_DEFLATED) as zip_file:
+        zip_file.writestr("[Content_Types].xml", content_types)
+        zip_file.writestr("_rels/.rels", rels)
+        zip_file.writestr("docProps/app.xml", app)
+        zip_file.writestr("docProps/core.xml", core)
+        zip_file.writestr("xl/workbook.xml", workbook)
+        zip_file.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        zip_file.writestr("xl/styles.xml", styles)
+        zip_file.writestr("xl/worksheets/sheet1.xml", worksheet)
+
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def get_age(birth_date: date | None) -> int | None:
@@ -59,6 +168,27 @@ def apply_teacher_student_scope(query, teacher: Teacher | None):
     )
 
 
+def get_actor_display_name(actor_user: User | None) -> str | None:
+    if actor_user is None:
+        return None
+    return actor_user.full_name or actor_user.login
+
+
+def serialize_history_item(item: EntityChangeLog) -> dict:
+    return {
+        "id": item.id,
+        "actor_user_id": item.actor_user_id,
+        "actor_user_name": get_actor_display_name(item.actor_user),
+        "entity": item.entity,
+        "entity_id": item.entity_id,
+        "field_name": item.field_name,
+        "old_value": item.old_value,
+        "new_value": item.new_value,
+        "action": item.action,
+        "created_at": item.created_at,
+    }
+
+
 def validate_student_payload(data: StudentCreate | StudentUpdate, is_create: bool = False) -> None:
     if getattr(data, "level", None) is not None:
         normalized_level = data.level.strip().lower() if data.level else None
@@ -71,6 +201,7 @@ def validate_student_payload(data: StudentCreate | StudentUpdate, is_create: boo
 
     if getattr(data, "status", None) is not None:
         normalized_status = data.status.strip().lower() if data.status else None
+        normalized_status = STATUS_ALIASES.get(normalized_status, normalized_status)
         data.status = normalized_status
         if normalized_status not in ALLOWED_STATUSES:
             raise HTTPException(
@@ -291,12 +422,51 @@ def get_student_history(
 ):
     require_staff(current_user)
     ensure_student_access(db, current_user, student_id)
-    return (
+    history_items = (
         db.query(EntityChangeLog)
+        .options(joinedload(EntityChangeLog.actor_user))
         .filter(EntityChangeLog.entity == "student")
         .filter(EntityChangeLog.entity_id == student_id)
         .order_by(EntityChangeLog.created_at.desc(), EntityChangeLog.id.desc())
         .all()
+    )
+    return [serialize_history_item(item) for item in history_items]
+
+
+@router.get("/students/{student_id}/export/xlsx")
+def export_student_xlsx(
+    student_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_staff(current_user)
+    student = ensure_student_access(db, current_user, student_id)
+    parent_phone = student.parent.phone if student.parent else None
+
+    rows: list[list[str | int | float]] = [
+        ["Поле", "Значение"],
+        ["ID", student.id],
+        ["ФИО ученика", student.fio],
+        ["Возраст", get_age(student.birth_date) or ""],
+        ["Дата рождения", student.birth_date.isoformat() if student.birth_date else ""],
+        ["Основной телефон", student.phone or ""],
+        ["Email", student.email or ""],
+        ["Адрес проживания", student.address or ""],
+        ["Уровень подготовки", student.level or ""],
+        ["Статус", student.status or ""],
+        ["Комментарий", student.comment or ""],
+        ["Дата первого обращения", student.first_contact_date.isoformat() if student.first_contact_date else ""],
+        ["Есть ответственное лицо", "Да" if student.has_parent else "Нет"],
+        ["ФИО ответственного лица", student.parent_name or ""],
+        ["Телефон ответственного лица", parent_phone or ""],
+    ]
+
+    output = BytesIO(build_xlsx_bytes(rows))
+    filename = f"student_{student.id}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -317,6 +487,59 @@ def get_student_subscriptions(
     )
 
     return subscriptions
+
+
+@router.get("/students/{student_id}/upcoming-lessons-summary")
+def get_student_upcoming_lessons_summary(
+    student_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(current_user)
+
+    student = get_student_or_404(db, student_id)
+    now = datetime.now()
+
+    upcoming_lessons = (
+        db.query(Lesson)
+        .options(
+            joinedload(Lesson.schedule).joinedload(ScheduleEvent.teacher).joinedload(Teacher.user),
+            joinedload(Lesson.schedule).joinedload(ScheduleEvent.room),
+            joinedload(Lesson.schedule).joinedload(ScheduleEvent.discipline),
+        )
+        .join(Lesson.lesson_students)
+        .join(Lesson.schedule)
+        .filter(LessonStudent.student_id == student_id)
+        .filter(ScheduleEvent.start_time > now)
+        .order_by(ScheduleEvent.start_time.asc())
+        .all()
+    )
+
+    items = []
+    for lesson in upcoming_lessons[:5]:
+        schedule = lesson.schedule
+        teacher_name = None
+        if schedule and schedule.teacher and schedule.teacher.user:
+            teacher_name = schedule.teacher.user.full_name or schedule.teacher.user.login
+
+        items.append(
+            {
+                "lesson_id": lesson.id,
+                "event_id": schedule.id if schedule else None,
+                "start_time": schedule.start_time if schedule else None,
+                "end_time": schedule.end_time if schedule else None,
+                "teacher_name": teacher_name,
+                "room_name": schedule.room.name if schedule and schedule.room else None,
+                "discipline_name": schedule.discipline.name if schedule and schedule.discipline else None,
+            }
+        )
+
+    return {
+        "student_id": student.id,
+        "student_name": student.fio,
+        "upcoming_lessons_count": len(upcoming_lessons),
+        "items": items,
+    }
 
 
 @router.put("/students/{student_id}", response_model=StudentResponse)

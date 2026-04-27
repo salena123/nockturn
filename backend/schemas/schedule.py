@@ -50,6 +50,13 @@ class ScheduleEntryCreate(BaseModel):
     recurrence: ScheduleRecurringRule = Field(default_factory=ScheduleRecurringRule)
 
 
+class BulkTeacherRescheduleRequest(BaseModel):
+    teacher_id: int
+    source_date: date
+    target_date: date
+    ignore_conflicts: bool = False
+
+
 class ScheduleEvent(BaseModel):
     id: int
     teacher_id: int
@@ -109,4 +116,3 @@ class Lesson(BaseModel):
 
 class LessonWithDetails(Lesson):
     schedule: ScheduleEventWithDetails | None = None
-

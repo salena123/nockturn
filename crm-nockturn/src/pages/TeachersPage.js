@@ -147,206 +147,90 @@ const TeachersPage = () => {
   }
 
   return (
-    <div style={{ padding: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2>Преподаватели</h2>
-        <button
-          onClick={() => setShowModal(true)}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-          }}
-        >
-          Добавить преподавателя
-        </button>
-      </div>
+    <div>
+      <h2>Преподаватели</h2>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: '15px',
-          marginBottom: '20px',
-          padding: '15px',
-          backgroundColor: '#f5f5f5',
-          borderRadius: '4px',
-        }}
-      >
+      <button type="button" onClick={() => setShowModal(true)}>
+        Добавить преподавателя
+      </button>
+
+      <div>
         <input
           type="text"
           placeholder="Поиск по ФИО, специализации или логину..."
           value={searchTerm}
           onChange={(event) => setSearchTerm(event.target.value)}
-          style={{
-            flex: 1,
-            padding: '8px',
-            border: '1px solid #ddd',
-            borderRadius: '4px',
-          }}
         />
-
-        <select
-          value={filterActive}
-          onChange={(event) => setFilterActive(event.target.value)}
-          style={{
-            padding: '8px',
-            border: '1px solid #ddd',
-            borderRadius: '4px',
-          }}
-        >
+        {' '}
+        <select value={filterActive} onChange={(event) => setFilterActive(event.target.value)}>
           <option value="all">Все преподаватели</option>
           <option value="active">Активные</option>
           <option value="inactive">Неактивные</option>
         </select>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
-        <table
-          style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            border: '1px solid #ddd',
-          }}
-        >
+      <div>
+        <table border="1" cellPadding="6" cellSpacing="0">
           <thead>
-            <tr style={{ backgroundColor: '#f5f5f5' }}>
-              <th style={{ border: '1px solid #ddd', padding: '12px', textAlign: 'left' }}>ФИО</th>
-              <th style={{ border: '1px solid #ddd', padding: '12px', textAlign: 'left' }}>Специализация</th>
-              <th style={{ border: '1px solid #ddd', padding: '12px', textAlign: 'left' }}>Опыт (лет)</th>
-              <th style={{ border: '1px solid #ddd', padding: '12px', textAlign: 'left' }}>Телефон</th>
-              <th style={{ border: '1px solid #ddd', padding: '12px', textAlign: 'left' }}>Статус</th>
-              <th style={{ border: '1px solid #ddd', padding: '12px', textAlign: 'left' }}>Дата найма</th>
-              <th style={{ border: '1px solid #ddd', padding: '12px', textAlign: 'center' }}>Действия</th>
+            <tr>
+              <th>ФИО</th>
+              <th>Специализация</th>
+              <th>Опыт (лет)</th>
+              <th>Телефон</th>
+              <th>Статус</th>
+              <th>Дата найма</th>
+              <th>Действия</th>
             </tr>
           </thead>
           <tbody>
             {filteredTeachers.map((teacher) => (
               <tr key={teacher.id}>
-                <td style={{ border: '1px solid #ddd', padding: '12px' }}>
+                <td>
                   <div>
                     <strong>{teacher.user?.full_name || 'N/A'}</strong>
-                    <div style={{ fontSize: '12px', color: '#666' }}>{teacher.user?.login}</div>
+                    <div>{teacher.user?.login}</div>
                   </div>
                 </td>
-                <td style={{ border: '1px solid #ddd', padding: '12px' }}>{teacher.specialization || '—'}</td>
-                <td style={{ border: '1px solid #ddd', padding: '12px' }}>{teacher.experience_years || '—'}</td>
-                <td style={{ border: '1px solid #ddd', padding: '12px' }}>{teacher.user?.phone || '—'}</td>
-                <td style={{ border: '1px solid #ddd', padding: '12px' }}>
-                  <span
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: '12px',
-                      fontSize: '12px',
-                      backgroundColor: teacher.user?.is_active ? '#d4edda' : '#f8d7da',
-                      color: teacher.user?.is_active ? '#155724' : '#721c24',
-                    }}
-                  >
-                    {teacher.user?.is_active ? 'Активен' : 'Неактивен'}
-                  </span>
-                </td>
-                <td style={{ border: '1px solid #ddd', padding: '12px' }}>
+                <td>{teacher.specialization || '—'}</td>
+                <td>{teacher.experience_years || '—'}</td>
+                <td>{teacher.user?.phone || '—'}</td>
+                <td>{teacher.user?.is_active ? 'Активен' : 'Неактивен'}</td>
+                <td>
                   {teacher.user?.hire_date ? new Date(teacher.user.hire_date).toLocaleDateString('ru-RU') : '—'}
                 </td>
-                <td style={{ border: '1px solid #ddd', padding: '12px', textAlign: 'center' }}>
-                  <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
-                    <button
-                      onClick={() => handleViewSchedule(teacher)}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '12px',
-                        backgroundColor: '#17a2b8',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                      }}
-                    >
+                <td>
+                  <div>
+                    <button type="button" onClick={() => handleViewSchedule(teacher)}>
                       Расписание
-                    </button>
-                    <button
-                      onClick={() => handleEdit(teacher)}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '12px',
-                        backgroundColor: '#007bff',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                      }}
-                    >
+                    </button>{' '}
+                    <button type="button" onClick={() => handleEdit(teacher)}>
                       Редактировать
-                    </button>
-                    <button
-                      onClick={() => handleDelete(teacher.id)}
-                      style={{
-                        padding: '4px 8px',
-                        fontSize: '12px',
-                        backgroundColor: '#dc3545',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                      }}
-                    >
+                    </button>{' '}
+                    <button type="button" onClick={() => handleDelete(teacher.id)}>
                       Удалить
                     </button>
                   </div>
                 </td>
               </tr>
-            ))}
-          </tbody>
+        ))}
+      </tbody>
         </table>
 
         {filteredTeachers.length === 0 && (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '40px',
-              color: '#666',
-              backgroundColor: '#f9f9f9',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-            }}
-          >
+          <div>
             {searchTerm || filterActive !== 'all' ? 'Преподаватели не найдены' : 'Нет преподавателей в системе'}
           </div>
         )}
       </div>
 
       {showModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'white',
-              padding: '20px',
-              borderRadius: '8px',
-              width: '500px',
-              maxHeight: '80vh',
-              overflowY: 'auto',
-            }}
-          >
+        <div>
+          <div>
             <h3>{editingTeacher ? 'Редактировать преподавателя' : 'Добавить преподавателя'}</h3>
 
             <form onSubmit={handleSubmit}>
               {!editingTeacher && (
-                <div style={{ marginBottom: '15px' }}>
+                <div>
                   <label>Пользователь:</label>
                   <select
                     value={formData.user_id}
@@ -354,7 +238,6 @@ const TeachersPage = () => {
                       setFormData({ ...formData, user_id: parseInt(event.target.value, 10) })
                     }
                     required
-                    style={{ width: '100%', padding: '8px', marginTop: '5px' }}
                   >
                     <option value="">Выберите пользователя</option>
                     {users.map((user) => (
@@ -366,18 +249,17 @@ const TeachersPage = () => {
                 </div>
               )}
 
-              <div style={{ marginBottom: '15px' }}>
+              <div>
                 <label>Специализация:</label>
                 <input
                   type="text"
                   value={formData.specialization}
                   onChange={(event) => setFormData({ ...formData, specialization: event.target.value })}
                   placeholder="Например: фортепиано, гитара, вокал"
-                  style={{ width: '100%', padding: '8px', marginTop: '5px' }}
                 />
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
+              <div>
                 <label>Опыт работы (лет):</label>
                 <input
                   type="number"
@@ -390,34 +272,24 @@ const TeachersPage = () => {
                       experience_years: parseInt(event.target.value, 10) || '',
                     })
                   }
-                  style={{ width: '100%', padding: '8px', marginTop: '5px' }}
                 />
               </div>
 
-              <div style={{ marginBottom: '15px' }}>
+              <div>
                 <label>О себе:</label>
                 <textarea
                   value={formData.bio}
                   onChange={(event) => setFormData({ ...formData, bio: event.target.value })}
                   placeholder="Краткая информация о преподавателе..."
                   rows={4}
-                  style={{ width: '100%', padding: '8px', marginTop: '5px', resize: 'vertical' }}
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button type="button" onClick={resetForm} style={{ padding: '8px 16px' }}>
+              <div>
+                <button type="button" onClick={resetForm}>
                   Отмена
-                </button>
-                <button
-                  type="submit"
-                  style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#4CAF50',
-                    color: 'white',
-                    border: 'none',
-                  }}
-                >
+                </button>{' '}
+                <button type="submit">
                   {editingTeacher ? 'Сохранить' : 'Добавить'}
                 </button>
               </div>
@@ -427,42 +299,11 @@ const TeachersPage = () => {
       )}
 
       {showSchedule && selectedTeacherSchedule && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: 'white',
-              padding: '20px',
-              borderRadius: '8px',
-              width: '800px',
-              maxHeight: '80vh',
-              overflowY: 'auto',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div>
+          <div>
+            <div>
               <h3>Расписание: {selectedTeacherSchedule.user?.full_name}</h3>
-              <button
-                onClick={() => setShowSchedule(false)}
-                style={{
-                  padding: '8px 16px',
-                  backgroundColor: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                }}
-              >
+              <button type="button" onClick={() => setShowSchedule(false)}>
                 Закрыть
               </button>
             </div>
@@ -471,9 +312,9 @@ const TeachersPage = () => {
               <div>Загрузка расписания...</div>
             ) : (
               <>
-                <div style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+                <div>
                   <h4>Статистика</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
                     <div>
                       <strong>Всего занятий:</strong> {selectedTeacherSchedule.statistics?.total_lessons || 0}
                     </div>
@@ -486,72 +327,41 @@ const TeachersPage = () => {
                 <div>
                   <h4>Предстоящие занятия (следующие 7 дней)</h4>
                   {selectedTeacherSchedule.upcoming_lessons && selectedTeacherSchedule.upcoming_lessons.length > 0 ? (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #ddd' }}>
+                    <table border="1" cellPadding="6" cellSpacing="0">
                       <thead>
-                        <tr style={{ backgroundColor: '#f5f5f5' }}>
-                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Дата</th>
-                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Время</th>
-                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Дисциплина</th>
-                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Кабинет</th>
-                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Тип</th>
+                        <tr>
+                          <th>Дата</th>
+                          <th>Время</th>
+                          <th>Дисциплина</th>
+                          <th>Кабинет</th>
+                          <th>Тип</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedTeacherSchedule.upcoming_lessons.map((lesson, index) => (
                           <tr key={index}>
-                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>
+                            <td>
                               {new Date(lesson.start_time).toLocaleDateString('ru-RU')}
                             </td>
-                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>
+                            <td>
                               {new Date(lesson.start_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} -
                               {new Date(lesson.end_time).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                             </td>
-                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>{lesson.discipline || '—'}</td>
-                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>{lesson.room || '—'}</td>
-                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>
-                              <span
-                                style={{
-                                  padding: '2px 6px',
-                                  borderRadius: '3px',
-                                  fontSize: '11px',
-                                  backgroundColor:
-                                    lesson.type === 'lesson'
-                                      ? '#d4edda'
-                                      : lesson.type === 'event'
-                                        ? '#d1ecf1'
-                                        : '#fff3cd',
-                                  color:
-                                    lesson.type === 'lesson'
-                                      ? '#155724'
-                                      : lesson.type === 'event'
-                                        ? '#0c5460'
-                                        : '#856404',
-                                }}
-                              >
-                                {lesson.type === 'lesson'
-                                  ? 'Урок'
-                                  : lesson.type === 'event'
-                                    ? 'Мероприятие'
-                                    : 'Мастер-класс'}
-                              </span>
+                            <td>{lesson.discipline || '—'}</td>
+                            <td>{lesson.room || '—'}</td>
+                            <td>
+                              {lesson.type === 'lesson'
+                                ? 'Урок'
+                                : lesson.type === 'event'
+                                  ? 'Мероприятие'
+                                  : 'Мастер-класс'}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   ) : (
-                    <div
-                      style={{
-                        textAlign: 'center',
-                        padding: '20px',
-                        color: '#666',
-                        backgroundColor: '#f9f9f9',
-                        border: '1px solid #ddd',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      Предстоящих занятий нет
-                    </div>
+                    <div>Предстоящих занятий нет</div>
                   )}
                 </div>
               </>

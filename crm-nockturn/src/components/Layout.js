@@ -26,11 +26,14 @@ function Layout({ children, currentUser, onLogout }) {
               <Link to="/users">Сотрудники</Link>{' | '}
               <Link to="/teachers">Преподаватели</Link>{' | '}
               <Link to="/subscriptions">Заключенные договоры</Link>{' | '}
-              <Link to="/payments">Платежи</Link>{' | '}
+              <Link to="/payments">Калькулятор платежей</Link>{' | '}
             </>
           )}
           <Link to="/attendance">Посещаемость</Link>{' | '}
+          <Link to="/lessons-journal">Журнал занятий</Link>{' | '}
           <Link to="/schedule">Расписание</Link>{' | '}
+          <Link to="/notes">Заметки</Link>{' | '}
+          <Link to="/notifications">Уведомления</Link>{' | '}
           {!isTeacher && (
             <>
               <Link to="/tariffs">Тарифы</Link>{' | '}
@@ -39,11 +42,7 @@ function Layout({ children, currentUser, onLogout }) {
               <Link to="/rooms">Кабинеты</Link>{' | '}
             </>
           )}
-          {isSuperAdmin && (
-            <>
-              <Link to="/editor">Редактор сайта</Link>
-            </>
-          )}
+          {isSuperAdmin && <Link to="/editor">Редактор сайта</Link>}
         </nav>
 
         <button type="button" onClick={onLogout}>

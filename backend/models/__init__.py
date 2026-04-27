@@ -24,3 +24,5 @@ from .userDocument import UserDocument
 from .archivedUser import ArchivedUser
 from .studentWaitlist import StudentWaitlist
 from .studentNote import StudentNote
+from .notification import Notification
+from .note import Note

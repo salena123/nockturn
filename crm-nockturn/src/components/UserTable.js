@@ -9,6 +9,7 @@ const UserTable = ({
   onToggleBlock,
   onOpenHistory,
   onOpenDocuments,
+  onExport,
 }) => {
   if (!users.length) {
     return <div>Сотрудники не найдены.</div>;
@@ -35,7 +36,7 @@ const UserTable = ({
             <td>{user.login}</td>
             <td>{user.full_name || ''}</td>
             <td>{user.phone || ''}</td>
-            <td>{user.role || ''}</td>
+            <td>{user.role_label || user.role || ''}</td>
             <td>{user.is_active ? 'Да' : 'Нет'}</td>
             <td>{user.hire_date || ''}</td>
             <td>
@@ -49,6 +50,9 @@ const UserTable = ({
               </button>{' '}
               <button type="button" onClick={() => onOpenDocuments(user)}>
                 Документы
+              </button>{' '}
+              <button type="button" onClick={() => onExport(user)}>
+                Экспорт
               </button>{' '}
               {!(user.id === currentUser.id || (currentUser.role === 'admin' && user.role === 'superadmin')) && (
                 <button type="button" onClick={() => onToggleBlock(user)}>

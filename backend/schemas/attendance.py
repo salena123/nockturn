@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -17,6 +17,13 @@ class AttendanceUpdate(BaseModel):
     student_id: Optional[int] = None
     status: Optional[str] = None
     comment: Optional[str] = None
+
+
+class AttendanceRescheduleRequest(BaseModel):
+    new_start_time: datetime
+    new_end_time: datetime
+    room_id: Optional[int] = None
+    ignore_conflicts: bool = False
 
 
 class AttendanceResponse(BaseModel):

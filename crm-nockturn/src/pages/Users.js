@@ -2,14 +2,147 @@ import React, { useEffect, useState } from 'react';
 
 import DeleteConfirm from '../components/DeleteConfirm';
 import UserForm from '../components/UserForm';
-import UserTable from '../components/UserTable';
 import UserSuccessModal from '../components/UserSuccessModal';
+import UserTable from '../components/UserTable';
 import api from '../api';
+import { formatServerDate, formatServerDateTime } from '../utils/dateTime';
 
 
 const EMPTY_DOCUMENT_FORM = {
   document_type: 'employment_contract',
-  file_path: '',
+};
+
+const ROLE_LABELS = {
+  admin: 'Администратор',
+  teacher: 'Преподаватель',
+  superadmin: 'Суперадминистратор',
+};
+
+const DOCUMENT_TYPE_LABELS = {
+  employment_contract: 'Договор найма',
+  contract_scan: 'Скан договора',
+  passport_scan: 'Скан паспорта',
+  other: 'Другой документ',
+};
+
+const ACTION_LABELS = {
+  create: 'Создание',
+  update: 'Изменение',
+  delete: 'Удаление',
+  reset_password: 'Сброс пароля',
+  block: 'Блокировка',
+  unblock: 'Разблокировка',
+};
+
+const FIELD_LABELS = {
+  id: 'ID',
+  login: 'Логин',
+  full_name: 'ФИО',
+  phone: 'Телефон',
+  role_id: 'Роль',
+  is_active: 'Активность',
+  hire_date: 'Дата начала работы',
+  password: 'Пароль',
+  document_type: 'Тип документа',
+  file_path: 'Файл',
+  created_at: 'Дата создания',
+  updated_at: 'Дата обновления',
+};
+
+const getRoleLabel = (roleName) => ROLE_LABELS[roleName] || roleName || '—';
+
+const getDocumentTypeLabel = (documentType) =>
+  DOCUMENT_TYPE_LABELS[documentType] || documentType || '—';
+
+const getActionLabel = (action) => ACTION_LABELS[action] || action || '—';
+
+const getFieldLabel = (fieldName) => FIELD_LABELS[fieldName] || fieldName || '—';
+
+const getActorLabel = (item) => item?.actor_user_name || 'Система';
+
+const getDocumentName = (filePath) => {
+  if (!filePath) {
+    return 'Файл не указан';
+  }
+  const normalizedPath = String(filePath).replaceAll('\\', '/');
+  return normalizedPath.split('/').pop() || normalizedPath;
+};
+
+const triggerDownload = (blob, filename) => {
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+};
+
+const tryParseJson = (value) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+const formatHistoryValue = (value, fieldName, roles) => {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+
+  const parsedValue = tryParseJson(value);
+
+  if (typeof parsedValue === 'object' && parsedValue !== null && !Array.isArray(parsedValue)) {
+    return Object.entries(parsedValue)
+      .map(([key, nestedValue]) => `${getFieldLabel(key)}: ${formatHistoryValue(nestedValue, key, roles)}`)
+      .join('; ');
+  }
+
+  if (fieldName === 'role_id') {
+    const role = roles.find((item) => item.id === Number(parsedValue));
+    return getRoleLabel(role?.name || parsedValue);
+  }
+
+  if (fieldName === 'is_active') {
+    if (parsedValue === true || parsedValue === 'true') {
+      return 'Активна';
+    }
+    if (parsedValue === false || parsedValue === 'false') {
+      return 'Заблокирована';
+    }
+  }
+
+  if (fieldName === 'document_type') {
+    return getDocumentTypeLabel(parsedValue);
+  }
+
+  if (fieldName === 'file_path') {
+    return getDocumentName(String(parsedValue));
+  }
+
+  if (fieldName === 'password') {
+    return 'Скрыто';
+  }
+
+  if (fieldName === 'hire_date') {
+    return formatServerDate(parsedValue);
+  }
+
+  if (fieldName === 'created_at' || fieldName === 'updated_at') {
+    return formatServerDateTime(parsedValue);
+  }
+
+  if (typeof parsedValue === 'boolean') {
+    return parsedValue ? 'Да' : 'Нет';
+  }
+
+  return String(parsedValue);
 };
 
 const Users = ({ currentUser }) => {
@@ -24,13 +157,16 @@ const Users = ({ currentUser }) => {
   const [successUserData, setSuccessUserData] = useState(null);
   const [successPassword, setSuccessPassword] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [successTitle, setSuccessTitle] = useState('');
   const [historyUser, setHistoryUser] = useState(null);
   const [historyItems, setHistoryItems] = useState([]);
   const [documentsUser, setDocumentsUser] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [documentHistory, setDocumentHistory] = useState([]);
   const [documentForm, setDocumentForm] = useState(EMPTY_DOCUMENT_FORM);
+  const [documentFile, setDocumentFile] = useState(null);
   const [editingDocumentId, setEditingDocumentId] = useState(null);
+  const [archivePreviewUser, setArchivePreviewUser] = useState(null);
 
   const loadUsers = async () => {
     try {
@@ -59,14 +195,14 @@ const Users = ({ currentUser }) => {
     }
   };
 
-  const loadAllData = async () => {
-    setLoading(true);
-    setError('');
-    await Promise.all([loadUsers(), loadRoles(), loadArchivedUsers()]);
-    setLoading(false);
-  };
-
   useEffect(() => {
+    const loadAllData = async () => {
+      setLoading(true);
+      setError('');
+      await Promise.all([loadUsers(), loadRoles(), loadArchivedUsers()]);
+      setLoading(false);
+    };
+
     loadAllData();
   }, []);
 
@@ -90,6 +226,7 @@ const Users = ({ currentUser }) => {
       setDocuments(documentsResponse.data);
       setDocumentHistory(historyResponse.data);
       setDocumentForm(EMPTY_DOCUMENT_FORM);
+      setDocumentFile(null);
       setEditingDocumentId(null);
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось загрузить документы сотрудника');
@@ -105,13 +242,17 @@ const Users = ({ currentUser }) => {
     setDocumentHistory(historyResponse.data);
   };
 
+  const refreshAll = async () => {
+    await Promise.all([loadUsers(), loadRoles(), loadArchivedUsers()]);
+  };
+
   const handleUserCreated = async () => {
-    await loadAllData();
+    await refreshAll();
     setEditingUser(null);
   };
 
   const handleUserUpdated = async () => {
-    await loadAllData();
+    await refreshAll();
     setEditingUser(null);
   };
 
@@ -119,7 +260,32 @@ const Users = ({ currentUser }) => {
     setSuccessUserData(userData);
     setSuccessPassword(generatedPassword);
     setIsEditMode(isEdit);
+    setSuccessTitle('');
     setSuccessModalOpen(true);
+  };
+
+  const handleRestoreArchivedUser = async (archivedUser) => {
+    try {
+      const response = await api.post(`/api/archived-users/${archivedUser.id}/restore`);
+      const restoredUser = response.data.user;
+      setSuccessUserData({
+        login: restoredUser.login,
+        full_name: restoredUser.full_name,
+        phone: restoredUser.phone,
+        role: getRoleLabel(restoredUser.role),
+        is_active: restoredUser.is_active,
+      });
+      setSuccessPassword(response.data.generated_password || '');
+      setIsEditMode(false);
+      setSuccessTitle('Сотрудник успешно восстановлен!');
+      setSuccessModalOpen(true);
+      if (archivePreviewUser?.id === archivedUser.id) {
+        setArchivePreviewUser(null);
+      }
+      await refreshAll();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось восстановить сотрудника из архива');
+    }
   };
 
   const handleToggleBlock = async (user) => {
@@ -128,12 +294,12 @@ const Users = ({ currentUser }) => {
         ? `/api/users/${user.id}/block`
         : `/api/users/${user.id}/unblock`;
       await api.post(endpoint);
-      await loadAllData();
+      await refreshAll();
       if (historyUser?.id === user.id) {
         await loadUserHistory(user);
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Ошибка изменения статуса пользователя');
+      setError(err.response?.data?.detail || 'Ошибка изменения статуса сотрудника');
     }
   };
 
@@ -150,9 +316,23 @@ const Users = ({ currentUser }) => {
         setDocuments([]);
         setDocumentHistory([]);
       }
-      await loadAllData();
+      if (archivePreviewUser?.original_user_id === deletingUser.id) {
+        setArchivePreviewUser(null);
+      }
+      await refreshAll();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Ошибка удаления пользователя');
+      setError(err.response?.data?.detail || 'Ошибка удаления сотрудника');
+    }
+  };
+
+  const handleExportUser = async (user) => {
+    try {
+      const response = await api.get(`/api/users/${user.id}/export/xlsx`, {
+        responseType: 'blob',
+      });
+      triggerDownload(response.data, `employee_${user.id}.xlsx`);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось экспортировать сотрудника');
     }
   };
 
@@ -163,19 +343,34 @@ const Users = ({ currentUser }) => {
     }
 
     try {
-      const payload = {
-        user_id: documentsUser.id,
-        document_type: documentForm.document_type,
-        file_path: documentForm.file_path,
-      };
-
       if (editingDocumentId) {
-        await api.put(`/api/user-documents/${editingDocumentId}`, payload);
+        if (documentFile) {
+          const formData = new FormData();
+          formData.append('document_type', documentForm.document_type);
+          formData.append('file', documentFile);
+          await api.put(`/api/user-documents/${editingDocumentId}/upload`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } else {
+          await api.put(`/api/user-documents/${editingDocumentId}`, {
+            document_type: documentForm.document_type,
+          });
+        }
       } else {
-        await api.post(`/api/users/${documentsUser.id}/documents`, payload);
+        if (!documentFile) {
+          setError('Для нового документа нужно выбрать файл');
+          return;
+        }
+        const formData = new FormData();
+        formData.append('document_type', documentForm.document_type);
+        formData.append('file', documentFile);
+        await api.post(`/api/users/${documentsUser.id}/documents/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
       }
 
       setDocumentForm(EMPTY_DOCUMENT_FORM);
+      setDocumentFile(null);
       setEditingDocumentId(null);
       await refreshDocuments(documentsUser.id);
     } catch (err) {
@@ -196,6 +391,17 @@ const Users = ({ currentUser }) => {
     }
   };
 
+  const handleDocumentDownload = async (document) => {
+    try {
+      const response = await api.get(`/api/user-documents/${document.id}/download`, {
+        responseType: 'blob',
+      });
+      triggerDownload(response.data, getDocumentName(document.file_path));
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось скачать документ');
+    }
+  };
+
   if (currentUser?.role === 'teacher') {
     return <div>Раздел сотрудников доступен только администратору.</div>;
   }
@@ -203,6 +409,16 @@ const Users = ({ currentUser }) => {
   if (loading) {
     return <div>Загрузка сотрудников...</div>;
   }
+
+  const usersForDisplay = users.map((user) => ({
+    ...user,
+    role_label: getRoleLabel(user.role),
+  }));
+
+  const archiveSnapshot =
+    archivePreviewUser && typeof tryParseJson(archivePreviewUser.snapshot_json) === 'object'
+      ? tryParseJson(archivePreviewUser.snapshot_json)
+      : null;
 
   return (
     <div>
@@ -227,13 +443,14 @@ const Users = ({ currentUser }) => {
       )}
 
       <UserTable
-        users={users}
+        users={usersForDisplay}
         currentUser={currentUser}
         onEdit={setEditingUser}
         onDelete={setDeletingUser}
         onToggleBlock={handleToggleBlock}
         onOpenHistory={loadUserHistory}
         onOpenDocuments={loadUserDocuments}
+        onExport={handleExportUser}
       />
 
       {historyUser && (
@@ -246,6 +463,7 @@ const Users = ({ currentUser }) => {
               <thead>
                 <tr>
                   <th>Дата</th>
+                  <th>Кто изменил</th>
                   <th>Действие</th>
                   <th>Поле</th>
                   <th>Было</th>
@@ -255,11 +473,12 @@ const Users = ({ currentUser }) => {
               <tbody>
                 {historyItems.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.created_at || ''}</td>
-                    <td>{item.action || ''}</td>
-                    <td>{item.field_name || ''}</td>
-                    <td>{item.old_value || ''}</td>
-                    <td>{item.new_value || ''}</td>
+                    <td>{formatServerDateTime(item.created_at)}</td>
+                    <td>{getActorLabel(item)}</td>
+                    <td>{getActionLabel(item.action)}</td>
+                    <td>{getFieldLabel(item.field_name)}</td>
+                    <td>{formatHistoryValue(item.old_value, item.field_name, roles)}</td>
+                    <td>{formatHistoryValue(item.new_value, item.field_name, roles)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -280,30 +499,34 @@ const Users = ({ currentUser }) => {
               <label>
                 Тип документа
                 <br />
-                <input
-                  type="text"
+                <select
                   value={documentForm.document_type}
                   onChange={(event) =>
                     setDocumentForm((prev) => ({ ...prev, document_type: event.target.value }))
                   }
-                  required
-                />
+                >
+                  {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
             <div>
               <label>
-                Путь к файлу
+                Файл договора или скана
                 <br />
                 <input
-                  type="text"
-                  value={documentForm.file_path}
-                  onChange={(event) =>
-                    setDocumentForm((prev) => ({ ...prev, file_path: event.target.value }))
-                  }
-                  required
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.webp"
+                  onChange={(event) => setDocumentFile(event.target.files?.[0] || null)}
                 />
               </label>
+              {editingDocumentId && !documentFile && (
+                <div>Если файл менять не нужно, можно сохранить только тип документа.</div>
+              )}
             </div>
 
             <button type="submit">
@@ -313,6 +536,7 @@ const Users = ({ currentUser }) => {
               type="button"
               onClick={() => {
                 setDocumentForm(EMPTY_DOCUMENT_FORM);
+                setDocumentFile(null);
                 setEditingDocumentId(null);
               }}
             >
@@ -328,7 +552,7 @@ const Users = ({ currentUser }) => {
                 <tr>
                   <th>ID</th>
                   <th>Тип</th>
-                  <th>Путь</th>
+                  <th>Файл</th>
                   <th>Дата</th>
                   <th>Действия</th>
                 </tr>
@@ -337,18 +561,21 @@ const Users = ({ currentUser }) => {
                 {documents.map((document) => (
                   <tr key={document.id}>
                     <td>{document.id}</td>
-                    <td>{document.document_type}</td>
-                    <td>{document.file_path}</td>
-                    <td>{document.created_at || ''}</td>
+                    <td>{getDocumentTypeLabel(document.document_type)}</td>
+                    <td>{getDocumentName(document.file_path)}</td>
+                    <td>{formatServerDateTime(document.created_at)}</td>
                     <td>
+                      <button type="button" onClick={() => handleDocumentDownload(document)}>
+                        Скачать
+                      </button>{' '}
                       <button
                         type="button"
                         onClick={() => {
                           setEditingDocumentId(document.id);
                           setDocumentForm({
-                            document_type: document.document_type || '',
-                            file_path: document.file_path || '',
+                            document_type: document.document_type || EMPTY_DOCUMENT_FORM.document_type,
                           });
+                          setDocumentFile(null);
                         }}
                       >
                         Редактировать
@@ -371,6 +598,7 @@ const Users = ({ currentUser }) => {
               <thead>
                 <tr>
                   <th>Дата</th>
+                  <th>Кто изменил</th>
                   <th>Действие</th>
                   <th>Поле</th>
                   <th>Было</th>
@@ -380,11 +608,12 @@ const Users = ({ currentUser }) => {
               <tbody>
                 {documentHistory.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.created_at || ''}</td>
-                    <td>{item.action || ''}</td>
-                    <td>{item.field_name || ''}</td>
-                    <td>{item.old_value || ''}</td>
-                    <td>{item.new_value || ''}</td>
+                    <td>{formatServerDateTime(item.created_at)}</td>
+                    <td>{getActorLabel(item)}</td>
+                    <td>{getActionLabel(item.action)}</td>
+                    <td>{getFieldLabel(item.field_name)}</td>
+                    <td>{formatHistoryValue(item.old_value, item.field_name, roles)}</td>
+                    <td>{formatHistoryValue(item.new_value, item.field_name, roles)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -409,25 +638,72 @@ const Users = ({ currentUser }) => {
                 <th>Исходный ID</th>
                 <th>Логин</th>
                 <th>ФИО</th>
+                <th>Роль</th>
                 <th>Телефон</th>
+                <th>Дата начала работы</th>
+                <th>Кто архивировал</th>
                 <th>Дата архивации</th>
+                <th>Восстановление</th>
+                <th>Детали</th>
               </tr>
             </thead>
             <tbody>
               {archivedUsers.map((user) => (
                 <tr key={user.id}>
                   <td>{user.id}</td>
-                  <td>{user.original_user_id || ''}</td>
+                  <td>{user.original_user_id || '—'}</td>
                   <td>{user.login}</td>
-                  <td>{user.full_name || ''}</td>
-                  <td>{user.phone || ''}</td>
-                  <td>{user.archived_at || ''}</td>
+                  <td>{user.full_name || '—'}</td>
+                  <td>{getRoleLabel(user.role_name)}</td>
+                  <td>{user.phone || '—'}</td>
+                  <td>{formatServerDate(user.hire_date)}</td>
+                  <td>{user.archived_by_name || 'Система'}</td>
+                  <td>{formatServerDateTime(user.archived_at)}</td>
+                  <td>
+                    <button type="button" onClick={() => handleRestoreArchivedUser(user)}>
+                      Восстановить
+                    </button>
+                  </td>
+                  <td>
+                    <button type="button" onClick={() => setArchivePreviewUser(user)}>
+                      Просмотреть
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {archivePreviewUser && (
+        <div>
+          <h3>Архивная карточка сотрудника: {archivePreviewUser.full_name || archivePreviewUser.login}</h3>
+          {!archiveSnapshot ? (
+            <div>Снимок данных недоступен.</div>
+          ) : (
+            <table border="1" cellPadding="6" cellSpacing="0">
+              <thead>
+                <tr>
+                  <th>Поле</th>
+                  <th>Значение</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(archiveSnapshot).map(([key, value]) => (
+                  <tr key={key}>
+                    <td>{getFieldLabel(key)}</td>
+                    <td>{formatHistoryValue(value, key, roles)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <button type="button" onClick={() => setArchivePreviewUser(null)}>
+            Закрыть архивную карточку
+          </button>
+        </div>
+      )}
 
       {deletingUser && (
         <DeleteConfirm
@@ -440,10 +716,14 @@ const Users = ({ currentUser }) => {
 
       <UserSuccessModal
         isOpen={successModalOpen}
-        onClose={() => setSuccessModalOpen(false)}
+        onClose={() => {
+          setSuccessModalOpen(false);
+          setSuccessTitle('');
+        }}
         user={successUserData}
         generatedPassword={successPassword}
         isEdit={isEditMode}
+        title={successTitle}
       />
     </div>
   );
