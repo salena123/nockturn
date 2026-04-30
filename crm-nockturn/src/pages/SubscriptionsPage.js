@@ -269,7 +269,7 @@ const SubscriptionsPage = ({ currentUser }) => {
         <table border="1" cellPadding="6" cellSpacing="0">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>№</th>
               <th>Ученик</th>
               <th>Тариф</th>
               <th>Статус</th>
@@ -282,14 +282,14 @@ const SubscriptionsPage = ({ currentUser }) => {
             </tr>
           </thead>
           <tbody>
-            {subscriptions.map((subscription) => {
+            {subscriptions.map((subscription, index) => {
               const student = students.find(s => s.id === subscription.student_id);
               const tariff = tariffs.find(t => t.id === subscription.tariff_id);
               const discount = subscription.discount_id ? discounts.find(d => d.id === subscription.discount_id) : null;
               
               return (
                 <tr key={subscription.id}>
-                  <td>{subscription.id}</td>
+                  <td>{index + 1}</td>
                   <td>{student?.fio || `Ученик #${subscription.student_id}`}</td>
                   <td>{tariff?.name || `Тариф #${subscription.tariff_id}`}</td>
                   <td>{subscription.status || ''}</td>

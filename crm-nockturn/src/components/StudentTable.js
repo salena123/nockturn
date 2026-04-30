@@ -21,7 +21,7 @@ const StudentTable = ({
     <table border="1" cellPadding="6" cellSpacing="0">
       <thead>
         <tr>
-          <th>ID</th>
+          <th>№</th>
           <th>ФИО</th>
           <th>Возраст</th>
           <th>Телефон</th>
@@ -33,9 +33,9 @@ const StudentTable = ({
         </tr>
       </thead>
       <tbody>
-        {students.map((student) => (
+        {students.map((student, index) => (
           <tr key={student.id}>
-            <td>{student.id}</td>
+            <td>{index + 1}</td>
             <td>{student.fio}</td>
             <td>{student.age ?? '—'}</td>
             <td>{student.phone || '—'}</td>

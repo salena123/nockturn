@@ -71,14 +71,14 @@ const DisciplinesPage = () => {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>№</th>
               <th>Название</th>
             </tr>
           </thead>
           <tbody>
-            {disciplines.map((discipline) => (
+            {disciplines.map((discipline, index) => (
               <tr key={discipline.id}>
-                <td>{discipline.id}</td>
+                <td>{index + 1}</td>
                 <td>{discipline.name}</td>
               </tr>
             ))}

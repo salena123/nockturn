@@ -19,7 +19,7 @@ const UserTable = ({
     <table border="1" cellPadding="6" cellSpacing="0">
       <thead>
         <tr>
-          <th>ID</th>
+          <th>№</th>
           <th>Логин</th>
           <th>ФИО</th>
           <th>Телефон</th>
@@ -30,9 +30,9 @@ const UserTable = ({
         </tr>
       </thead>
       <tbody>
-        {users.map((user) => (
+        {users.map((user, index) => (
           <tr key={user.id}>
-            <td>{user.id}</td>
+            <td>{index + 1}</td>
             <td>{user.login}</td>
             <td>{user.full_name || ''}</td>
             <td>{user.phone || ''}</td>

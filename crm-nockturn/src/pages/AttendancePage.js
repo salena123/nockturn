@@ -443,16 +443,16 @@ const AttendancePage = () => {
             <table border="1" cellPadding="6" cellSpacing="0">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>№</th>
                   <th>Описание</th>
                   <th>Создано</th>
                   <th>Действия</th>
                 </tr>
               </thead>
               <tbody>
-                {issues.map((issue) => (
+                {issues.map((issue, index) => (
                   <tr key={issue.id}>
-                    <td>{issue.id}</td>
+                    <td>{index + 1}</td>
                     <td>{issue.description}</td>
                     <td>{issue.created_at || ''}</td>
                     <td>
@@ -504,7 +504,7 @@ const AttendancePage = () => {
         <table border="1" cellPadding="6" cellSpacing="0">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>№</th>
               <th>Занятие</th>
               <th>Ученик</th>
               <th>Абонемент</th>
@@ -517,9 +517,9 @@ const AttendancePage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredRecords.map((record) => (
+            {filteredRecords.map((record, index) => (
               <tr key={record.id}>
-                <td>{record.id}</td>
+                <td>{index + 1}</td>
                 <td>{record.lesson_label || `#${record.lesson_id}`}</td>
                 <td>{record.student_name || record.student_id || ''}</td>
                 <td>{record.subscription_id ? `#${record.subscription_id}` : 'Без абонемента'}</td>

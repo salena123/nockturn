@@ -325,7 +325,7 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
 
             <div>
               <label>
-                Telegram ID ответственного лица
+                ВК ID ответственного лица
                 <br />
                 <input
                   type="number"

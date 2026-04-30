@@ -212,7 +212,7 @@ const PaymentsPage = ({ currentUser }) => {
         <table border="1" cellPadding="6" cellSpacing="0">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>№</th>
               <th>Ученик</th>
               <th>Договор</th>
               <th>Сумма</th>
@@ -224,9 +224,9 @@ const PaymentsPage = ({ currentUser }) => {
             </tr>
           </thead>
           <tbody>
-            {payments.map((payment) => (
+            {payments.map((payment, index ) => (
               <tr key={payment.id}>
-                <td>{payment.id}</td>
+                <td>{index + 1}</td>
                 <td>{payment.student_id || ''}</td>
                 <td>{payment.subscription_id || ''}</td>
                 <td>{payment.amount ?? ''}</td>

@@ -233,7 +233,7 @@ const LessonsJournalPage = ({ currentUser }) => {
         <table border="1" cellPadding="6" cellSpacing="0">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>№</th>
               <th>Дата</th>
               <th>Преподаватель</th>
               <th>Дисциплина</th>
@@ -245,9 +245,9 @@ const LessonsJournalPage = ({ currentUser }) => {
             </tr>
           </thead>
           <tbody>
-            {filteredLessons.map((lesson) => (
+            {filteredLessons.map((lesson, index) => (
               <tr key={lesson.id}>
-                <td>{lesson.id}</td>
+                <td>{index + 1}</td>
                 <td>{formatServerDate(lesson.lesson_date)}</td>
                 <td>{lesson.teacher_name || '—'}</td>
                 <td>{lesson.schedule?.discipline?.name || '—'}</td>
@@ -286,7 +286,7 @@ const LessonsJournalPage = ({ currentUser }) => {
             <table border="1" cellPadding="6" cellSpacing="0">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>№</th>
                   <th>Ученик</th>
                   <th>Статус</th>
                   <th>Остаток занятий</th>
@@ -295,9 +295,9 @@ const LessonsJournalPage = ({ currentUser }) => {
                 </tr>
               </thead>
               <tbody>
-                {attendance.map((record) => (
+                {attendance.map((record, index) => (
                   <tr key={record.id}>
-                    <td>{record.id}</td>
+                    <td>{index + 1}</td>
                     <td>{record.student_name || '—'}</td>
                     <td>{STATUS_LABELS[record.status] || record.status}</td>
                     <td>{record.subscription_balance ?? '—'}</td>
@@ -379,15 +379,15 @@ const LessonsJournalPage = ({ currentUser }) => {
             <table border="1" cellPadding="6" cellSpacing="0">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>№</th>
                   <th>Описание</th>
                   <th>Создано</th>
                 </tr>
               </thead>
               <tbody>
-                {issues.map((issue) => (
+                {issues.map((issue, index) => (
                   <tr key={issue.id}>
-                    <td>{issue.id}</td>
+                    <td>{index + 1}</td>
                     <td>{issue.description}</td>
                     <td>{formatServerDateTime(issue.created_at)}</td>
                   </tr>

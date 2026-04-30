@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backend_uploads:/app/uploads
+
+  messenger-bot:
+    build:
+      context: ./messenger-bot
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      CRM_API_BASE_URL: http://backend:8000
+    depends_on:
+      - backend
+
+  crm-frontend:
+    build:
+      context: ./crm-nockturn
+      args:
+        REACT_APP_API_BASE_URL: /api
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - crm-frontend
+      - backend
+      - messenger-bot
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  backend_uploads:
+  caddy_data:
+  caddy_config:

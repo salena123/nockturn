@@ -173,6 +173,7 @@ const TeachersPage = () => {
         <table border="1" cellPadding="6" cellSpacing="0">
           <thead>
             <tr>
+              <th>№</th>
               <th>ФИО</th>
               <th>Специализация</th>
               <th>Опыт (лет)</th>
@@ -183,8 +184,9 @@ const TeachersPage = () => {
             </tr>
           </thead>
           <tbody>
-            {filteredTeachers.map((teacher) => (
+            {filteredTeachers.map((teacher, index) => (
               <tr key={teacher.id}>
+                <td>{index + 1}</td>
                 <td>
                   <div>
                     <strong>{teacher.user?.full_name || 'N/A'}</strong>

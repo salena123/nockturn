@@ -77,3 +77,8 @@ app.include_router(student_notes.router)
 app.include_router(notifications.router)
 app.include_router(notes.router)
 app.include_router(bot.router)
+
+
+@app.get("/health")
+def healthcheck():
+    return {"status": "ok", "service": "backend"}

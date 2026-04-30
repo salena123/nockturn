@@ -550,7 +550,7 @@ const Users = ({ currentUser }) => {
             <table border="1" cellPadding="6" cellSpacing="0">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>№</th>
                   <th>Тип</th>
                   <th>Файл</th>
                   <th>Дата</th>
@@ -558,9 +558,9 @@ const Users = ({ currentUser }) => {
                 </tr>
               </thead>
               <tbody>
-                {documents.map((document) => (
+                {documents.map((document, index) => (
                   <tr key={document.id}>
-                    <td>{document.id}</td>
+                    <td>{index + 1}</td>
                     <td>{getDocumentTypeLabel(document.document_type)}</td>
                     <td>{getDocumentName(document.file_path)}</td>
                     <td>{formatServerDateTime(document.created_at)}</td>
@@ -634,8 +634,8 @@ const Users = ({ currentUser }) => {
           <table border="1" cellPadding="6" cellSpacing="0">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Исходный ID</th>
+                <th>№</th>
+  
                 <th>Логин</th>
                 <th>ФИО</th>
                 <th>Роль</th>
@@ -648,10 +648,9 @@ const Users = ({ currentUser }) => {
               </tr>
             </thead>
             <tbody>
-              {archivedUsers.map((user) => (
+              {archivedUsers.map((user, index) => (
                 <tr key={user.id}>
-                  <td>{user.id}</td>
-                  <td>{user.original_user_id || '—'}</td>
+                  <td>{index + 1}</td>
                   <td>{user.login}</td>
                   <td>{user.full_name || '—'}</td>
                   <td>{getRoleLabel(user.role_name)}</td>

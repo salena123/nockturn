@@ -81,7 +81,7 @@ const NotificationsPage = ({ currentUser }) => {
         <table border="1" cellPadding="6" cellSpacing="0">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>№</th>
               <th>Тип</th>
               <th>Ученик</th>
               <th>Сотрудник</th>
@@ -91,9 +91,9 @@ const NotificationsPage = ({ currentUser }) => {
             </tr>
           </thead>
           <tbody>
-            {notifications.map((notification) => (
+            {notifications.map((notification, index) => (
               <tr key={notification.id}>
-                <td>{notification.id}</td>
+                <td>{index + 1}</td>
                 <td>{TYPE_LABELS[notification.type] || notification.type || '—'}</td>
                 <td>{notification.student_name || '—'}</td>
                 <td>{notification.user_name || '—'}</td>

@@ -616,7 +616,7 @@ const Students = ({ currentUser }) => {
       <table border="1" cellPadding="6" cellSpacing="0">
         <thead>
           <tr>
-            <th>ID</th>
+            <th>№</th>
             <th>Статус</th>
             <th>Тариф</th>
             <th>Всего занятий</th>
@@ -627,9 +627,9 @@ const Students = ({ currentUser }) => {
           </tr>
         </thead>
         <tbody>
-          {items.map((subscription) => (
+          {items.map((subscription, index ) => (
             <tr key={subscription.id}>
-              <td>{subscription.id}</td>
+              <td>{index + 1}</td>
               <td>{getSubscriptionStatusLabel(subscription.status)}</td>
               <td>{subscription.tariff_id ? `#${subscription.tariff_id}` : '—'}</td>
               <td>{subscription.lessons_total ?? '—'}</td>
@@ -778,7 +778,7 @@ const Students = ({ currentUser }) => {
             <table border="1" cellPadding="6" cellSpacing="0">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>№</th>
                   <th>Ученик</th>
                   <th>Преподаватель</th>
                   <th>Дисциплина</th>
@@ -790,11 +790,11 @@ const Students = ({ currentUser }) => {
                 </tr>
               </thead>
               <tbody>
-                {allWaitlistEntries.map((entry) => {
+                {allWaitlistEntries.map((entry, index) => {
                   const student = students.find((item) => item.id === entry.student_id);
                   return (
                     <tr key={entry.id}>
-                      <td>{entry.id}</td>
+                      <td>{index + 1}</td>
                       <td>{getStudentName(entry.student_id)}</td>
                       <td>{getTeacherName(entry.teacher_id)}</td>
                       <td>{getDisciplineName(entry.discipline_id)}</td>
@@ -918,7 +918,7 @@ const Students = ({ currentUser }) => {
             <table border="1" cellPadding="6" cellSpacing="0">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>№</th>
                   <th>Текст</th>
                   <th>Создано</th>
                   <th>Обновлено</th>
@@ -926,9 +926,9 @@ const Students = ({ currentUser }) => {
                 </tr>
               </thead>
               <tbody>
-                {notes.map((note) => (
+                {notes.map((note, index) => (
                   <tr key={note.id}>
-                    <td>{note.id}</td>
+                    <td>{index + 1}</td>
                     <td>{note.text}</td>
                     <td>{formatServerDateTime(note.created_at)}</td>
                     <td>{formatServerDateTime(note.updated_at)}</td>
@@ -1157,7 +1157,7 @@ const Students = ({ currentUser }) => {
             <table border="1" cellPadding="6" cellSpacing="0">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th>№</th>
                   <th>Преподаватель</th>
                   <th>Дисциплина</th>
                   <th>Желаемое расписание</th>
@@ -1166,9 +1166,9 @@ const Students = ({ currentUser }) => {
                 </tr>
               </thead>
               <tbody>
-                {waitlistEntries.map((entry) => (
+                {waitlistEntries.map((entry, index) => (
                   <tr key={entry.id}>
-                    <td>{entry.id}</td>
+                    <td>{index + 1}</td>
                     <td>{getTeacherName(entry.teacher_id)}</td>
                     <td>{getDisciplineName(entry.discipline_id)}</td>
                     <td>{entry.desired_schedule_text || '—'}</td>

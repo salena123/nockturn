@@ -71,14 +71,14 @@ const RoomsPage = () => {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>№</th>
               <th>Название</th>
             </tr>
           </thead>
           <tbody>
-            {rooms.map((room) => (
+            {rooms.map((room, index) => (
               <tr key={room.id}>
-                <td>{room.id}</td>
+                <td>{index + 1}</td>
                 <td>{room.name}</td>
               </tr>
             ))}
