@@ -34,7 +34,7 @@ function App() {
       }
 
       try {
-        const response = await api.get('/api/me');
+        const response = await api.get('/me');
         setCurrentUser(response.data);
       } catch (error) {
         localStorage.removeItem('token');
