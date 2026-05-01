@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class EntityChangeLogCreate(BaseModel):
     actor_user_id: Optional[int] = None
+    ip_address: Optional[str] = Field(default=None, max_length=64)
     entity: str = Field(..., min_length=1, max_length=100)
     entity_id: int
     field_name: Optional[str] = Field(default=None, max_length=100)
@@ -17,6 +18,7 @@ class EntityChangeLogCreate(BaseModel):
 class EntityChangeLogResponse(BaseModel):
     id: int
     actor_user_id: Optional[int] = None
+    ip_address: Optional[str] = None
     entity: str
     entity_id: int
     field_name: Optional[str] = None

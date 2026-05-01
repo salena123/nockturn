@@ -96,6 +96,7 @@ def serialize_history_item(item: EntityChangeLog) -> dict:
     return {
         "id": item.id,
         "actor_user_id": item.actor_user_id,
+        "ip_address": item.ip_address,
         "actor_user_name": get_actor_display_name(item.actor_user),
         "entity": item.entity,
         "entity_id": item.entity_id,

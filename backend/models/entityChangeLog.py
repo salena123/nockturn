@@ -9,6 +9,7 @@ class EntityChangeLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     actor_user_id = Column(Integer, ForeignKey("users.id"))
+    ip_address = Column(String(64))
     entity = Column(String(100), nullable=False)
     entity_id = Column(Integer, nullable=False)
     field_name = Column(String(100))

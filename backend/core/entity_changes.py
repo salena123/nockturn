@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from models.entityChangeLog import EntityChangeLog
+from .request_context import get_request_ip
 
 
 def normalize_json_value(value: Any) -> Any:
@@ -50,6 +51,7 @@ def log_entity_change(
     db.add(
         EntityChangeLog(
             actor_user_id=actor_user_id,
+            ip_address=get_request_ip(),
             entity=entity,
             entity_id=entity_id,
             field_name=field_name,

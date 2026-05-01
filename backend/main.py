@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from api.routers import (
     users,
 )
 from core.bootstrap import ensure_default_roles, ensure_default_superadmin
+from core.request_context import extract_client_ip, reset_request_ip, set_request_ip
 from db.session import engine
 from models import Base
 
@@ -42,6 +43,11 @@ def ensure_extended_schema() -> None:
         "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications(user_id)",
         "CREATE INDEX IF NOT EXISTS ix_notifications_note_id ON notifications(note_id)",
         "CREATE INDEX IF NOT EXISTS ix_notes_recipient_user_id ON notes(recipient_user_id)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR(64)",
+        "ALTER TABLE entity_change_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(64)",
     ]
     with engine.begin() as connection:
         for statement in statements:
@@ -63,6 +69,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def store_request_ip(request: Request, call_next):
+    token = set_request_ip(extract_client_ip(request))
+    try:
+        response = await call_next(request)
+    finally:
+        reset_request_ip(token)
+    return response
 
 app.include_router(students.router)
 app.include_router(users.router)
