@@ -1,11 +1,13 @@
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
 
 from core.access import require_admin
+from core.crypto import decrypt_bytes, encrypt_bytes
 from core.deps import get_current_user, get_db
 from core.entity_changes import log_entity_change, log_model_updates
 from models.entityChangeLog import EntityChangeLog
@@ -55,12 +57,10 @@ def save_uploaded_document(user_id: int, file: UploadFile) -> str:
     filename = f"{uuid4().hex}{extension}"
     target_path = user_dir / filename
 
+    payload = file.file.read()
+    encrypted_payload = encrypt_bytes(payload)
     with target_path.open("wb") as output_file:
-        while True:
-            chunk = file.file.read(1024 * 1024)
-            if not chunk:
-                break
-            output_file.write(chunk)
+        output_file.write(encrypted_payload)
 
     return str(target_path.relative_to(BACKEND_DIR))
 
@@ -108,6 +108,24 @@ def serialize_history_item(item: EntityChangeLog) -> dict:
     }
 
 
+def stream_document_bytes(document: UserDocument, file_path: Path, db: Session):
+    if not document.is_encrypted:
+        payload = file_path.read_bytes()
+        file_path.write_bytes(encrypt_bytes(payload))
+        document.is_encrypted = True
+        db.commit()
+        db.refresh(document)
+    else:
+        encrypted_payload = file_path.read_bytes()
+        payload = decrypt_bytes(encrypted_payload)
+
+    return StreamingResponse(
+        BytesIO(payload),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{file_path.name}"'},
+    )
+
+
 @router.get("/users/{user_id}/documents", response_model=list[UserDocumentResponse])
 def get_user_documents(
     user_id: int,
@@ -138,6 +156,7 @@ def create_user_document(
         user_id=user_id,
         document_type=data.document_type,
         file_path=data.file_path,
+        is_encrypted=False,
     )
     db.add(document)
     db.flush()
@@ -151,6 +170,7 @@ def create_user_document(
             "user_id": user_id,
             "document_type": data.document_type,
             "file_path": data.file_path,
+            "is_encrypted": False,
         },
     )
     db.commit()
@@ -174,6 +194,7 @@ def upload_user_document(
         user_id=user_id,
         document_type=document_type.strip(),
         file_path=file_path,
+        is_encrypted=True,
     )
     db.add(document)
     db.flush()
@@ -187,6 +208,7 @@ def upload_user_document(
             "user_id": user_id,
             "document_type": document.document_type,
             "file_path": file_path,
+            "is_encrypted": True,
         },
     )
     db.commit()
@@ -211,6 +233,8 @@ def update_user_document(
     if data.file_path is not None:
         changes["file_path"] = (document.file_path, data.file_path)
         document.file_path = data.file_path
+        changes["is_encrypted"] = (document.is_encrypted, False)
+        document.is_encrypted = False
 
     log_model_updates(
         db,
@@ -246,6 +270,8 @@ def replace_user_document_file(
         new_file_path = save_uploaded_document(document.user_id, file)
         changes["file_path"] = (old_file_path, new_file_path)
         document.file_path = new_file_path
+        changes["is_encrypted"] = (document.is_encrypted, True)
+        document.is_encrypted = True
         delete_managed_document_file(old_file_path)
 
     log_model_updates(
@@ -272,12 +298,7 @@ def download_user_document(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Файл документа не найден на сервере")
 
-    filename = file_path.name
-    return FileResponse(
-        path=file_path,
-        filename=filename,
-        media_type="application/octet-stream",
-    )
+    return stream_document_bytes(document, file_path, db)
 
 
 @router.delete("/user-documents/{document_id}")
@@ -298,6 +319,7 @@ def delete_user_document(
             "user_id": document.user_id,
             "document_type": document.document_type,
             "file_path": document.file_path,
+            "is_encrypted": document.is_encrypted,
         },
     )
     delete_managed_document_file(document.file_path)

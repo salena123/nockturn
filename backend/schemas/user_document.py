@@ -20,6 +20,7 @@ class UserDocumentResponse(BaseModel):
     user_id: int
     document_type: str
     file_path: str
+    is_encrypted: bool = True
     created_at: Optional[datetime] = None
 
     class Config:

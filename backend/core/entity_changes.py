@@ -8,6 +8,37 @@ from sqlalchemy.orm import Session
 from models.entityChangeLog import EntityChangeLog
 from .request_context import get_request_ip
 
+SENSITIVE_FIELD_NAMES = {
+    "password",
+    "phone",
+    "address",
+    "email",
+    "fio",
+    "full_name",
+    "parent_name",
+    "comment",
+}
+
+
+def redact_sensitive_value(field_name: str | None, value: Any) -> Any:
+    normalized_field = (field_name or "").lower()
+    if normalized_field in SENSITIVE_FIELD_NAMES:
+        return "[REDACTED]"
+
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            if str(key).lower() in SENSITIVE_FIELD_NAMES:
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = redact_sensitive_value(str(key), item)
+        return redacted
+
+    if isinstance(value, list):
+        return [redact_sensitive_value(field_name, item) for item in value]
+
+    return value
+
 
 def normalize_json_value(value: Any) -> Any:
     if isinstance(value, (datetime, date)):
@@ -55,8 +86,8 @@ def log_entity_change(
             entity=entity,
             entity_id=entity_id,
             field_name=field_name,
-            old_value=serialize_change_value(old_value),
-            new_value=serialize_change_value(new_value),
+            old_value=serialize_change_value(redact_sensitive_value(field_name, old_value)),
+            new_value=serialize_change_value(redact_sensitive_value(field_name, new_value)),
             action=action,
         )
     )

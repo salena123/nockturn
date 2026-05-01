@@ -48,6 +48,7 @@ def ensure_extended_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR(64)",
         "ALTER TABLE entity_change_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(64)",
+        "ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false",
     ]
     with engine.begin() as connection:
         for statement in statements:

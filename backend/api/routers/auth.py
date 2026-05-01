@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
 import jwt as pyjwt
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlalchemy.orm import Session, joinedload
 
 from core.config import (
@@ -131,7 +131,7 @@ def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh")
-def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
+def refresh_token(refresh_token: str = Body(..., embed=True), db: Session = Depends(get_db)):
     try:
         payload = pyjwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         login = payload.get("sub")
