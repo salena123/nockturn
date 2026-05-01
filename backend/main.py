@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from api.routers import (
     attendance,
@@ -22,6 +23,7 @@ from api.routers import (
     user_documents,
     users,
 )
+from core.bootstrap import ensure_default_roles, ensure_default_superadmin
 from db.session import engine
 from models import Base
 
@@ -48,6 +50,9 @@ def ensure_extended_schema() -> None:
 
 Base.metadata.create_all(bind=engine)
 ensure_extended_schema()
+with Session(engine) as bootstrap_session:
+    ensure_default_roles(bootstrap_session)
+    ensure_default_superadmin(bootstrap_session)
 
 app = FastAPI()
 
