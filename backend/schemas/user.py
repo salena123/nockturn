@@ -11,6 +11,9 @@ class UserCreate(BaseModel):
     role_id: int
     is_active: bool = True
     hire_date: Optional[date] = None
+    consent_received: bool = False
+    consent_received_at: Optional[datetime] = None
+    consent_document_version: Optional[str] = Field(default=None, max_length=100)
     generate_password: bool = False
 
 
@@ -21,6 +24,9 @@ class UserUpdate(BaseModel):
     role_id: Optional[int] = None
     is_active: Optional[bool] = None
     hire_date: Optional[date] = None
+    consent_received: Optional[bool] = None
+    consent_received_at: Optional[datetime] = None
+    consent_document_version: Optional[str] = Field(default=None, max_length=100)
 
 
 class UserPasswordResetRequest(BaseModel):
@@ -42,6 +48,9 @@ class UserResponse(BaseModel):
     role: Optional[str] = None
     is_active: bool
     hire_date: Optional[date] = None
+    consent_received: bool = False
+    consent_received_at: Optional[datetime] = None
+    consent_document_version: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

@@ -24,6 +24,7 @@ from api.routers import (
     users,
 )
 from core.bootstrap import ensure_default_roles, ensure_default_superadmin
+from core.crypto import encrypt_text, is_encrypted_text
 from core.request_context import extract_client_ip, reset_request_ip, set_request_ip
 from db.session import engine
 from models import Base
@@ -47,6 +48,24 @@ def ensure_extended_schema() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR(64)",
+        "ALTER TABLE users ALTER COLUMN full_name TYPE TEXT",
+        "ALTER TABLE users ALTER COLUMN phone TYPE TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_received BOOLEAN DEFAULT false",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_received_at TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_document_version VARCHAR(100)",
+        "ALTER TABLE students ALTER COLUMN fio TYPE TEXT",
+        "ALTER TABLE students ALTER COLUMN phone TYPE TEXT",
+        "ALTER TABLE students ALTER COLUMN email TYPE TEXT",
+        "ALTER TABLE students ALTER COLUMN parent_name TYPE TEXT",
+        "ALTER TABLE students ADD COLUMN IF NOT EXISTS consent_received BOOLEAN DEFAULT false",
+        "ALTER TABLE students ADD COLUMN IF NOT EXISTS consent_received_at TIMESTAMP",
+        "ALTER TABLE students ADD COLUMN IF NOT EXISTS consent_document_version VARCHAR(100)",
+        "ALTER TABLE parents ALTER COLUMN full_name TYPE TEXT",
+        "ALTER TABLE parents ALTER COLUMN phone TYPE TEXT",
+        "ALTER TABLE parents ALTER COLUMN email TYPE TEXT",
+        "ALTER TABLE archived_users ALTER COLUMN full_name TYPE TEXT",
+        "ALTER TABLE archived_users ALTER COLUMN phone TYPE TEXT",
+        "ALTER TABLE archived_users ALTER COLUMN snapshot_json TYPE TEXT",
         "ALTER TABLE entity_change_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(64)",
         "ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false",
     ]
@@ -55,8 +74,43 @@ def ensure_extended_schema() -> None:
             connection.execute(text(statement))
 
 
+def migrate_plaintext_personal_data() -> None:
+    encrypted_columns = {
+        "users": ["full_name", "phone"],
+        "students": ["fio", "phone", "email", "parent_name", "address", "comment"],
+        "parents": ["full_name", "phone", "email"],
+        "archived_users": ["full_name", "phone", "snapshot_json"],
+    }
+
+    with engine.begin() as connection:
+        for table_name, columns in encrypted_columns.items():
+            rows = connection.execute(
+                text(
+                    f"SELECT id, {', '.join(columns)} FROM {table_name}"
+                )
+            ).mappings()
+            for row in rows:
+                updates: dict[str, str] = {}
+                for column in columns:
+                    value = row[column]
+                    if value in (None, "") or is_encrypted_text(value):
+                        continue
+                    updates[column] = encrypt_text(str(value))
+
+                if not updates:
+                    continue
+
+                assignments = ", ".join(f"{column} = :{column}" for column in updates)
+                params = {"id": row["id"], **updates}
+                connection.execute(
+                    text(f"UPDATE {table_name} SET {assignments} WHERE id = :id"),
+                    params,
+                )
+
+
 Base.metadata.create_all(bind=engine)
 ensure_extended_schema()
+migrate_plaintext_personal_data()
 with Session(engine) as bootstrap_session:
     ensure_default_roles(bootstrap_session)
     ensure_default_superadmin(bootstrap_session)

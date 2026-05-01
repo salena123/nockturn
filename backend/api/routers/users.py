@@ -33,6 +33,7 @@ from schemas.user import (
 
 router = APIRouter(prefix="/api")
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+USER_DOCUMENTS_DIR = BACKEND_DIR / "uploads" / "user_documents"
 
 
 def resolve_document_path(file_path: str) -> Path:
@@ -46,6 +47,10 @@ def delete_document_file(file_path: str | None) -> None:
     if not file_path:
         return
     path = resolve_document_path(file_path)
+    try:
+        path.relative_to(USER_DOCUMENTS_DIR)
+    except ValueError:
+        return
     if path.exists():
         path.unlink()
 
@@ -164,6 +169,9 @@ def serialize_user(user: User) -> UserResponse:
         role=user.role.name if user.role else None,
         is_active=bool(user.is_active),
         hire_date=user.hire_date,
+        consent_received=bool(user.consent_received),
+        consent_received_at=user.consent_received_at,
+        consent_document_version=user.consent_document_version,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -336,6 +344,11 @@ def restore_archived_user(
         role_id=archived_user.role_id,
         is_active=bool(snapshot.get("is_active", True)),
         hire_date=archived_user.hire_date,
+        consent_received=bool(snapshot.get("consent_received", False)),
+        consent_received_at=datetime.fromisoformat(snapshot["consent_received_at"])
+        if snapshot.get("consent_received_at")
+        else None,
+        consent_document_version=snapshot.get("consent_document_version"),
     )
     db.add(restored_user)
     db.flush()
@@ -369,6 +382,9 @@ def restore_archived_user(
             "role_id": restored_user.role_id,
             "is_active": restored_user.is_active,
             "hire_date": restored_user.hire_date,
+            "consent_received": restored_user.consent_received,
+            "consent_received_at": restored_user.consent_received_at,
+            "consent_document_version": restored_user.consent_document_version,
         },
     )
 
@@ -429,6 +445,9 @@ def export_user_xlsx(
         ["Роль", user.role.name if user.role else ""],
         ["Активен", "Да" if user.is_active else "Нет"],
         ["Дата начала работы", user.hire_date.isoformat() if user.hire_date else ""],
+        ["Согласие на обработку ПДн", "Да" if user.consent_received else "Нет"],
+        ["Дата получения согласия", user.consent_received_at.isoformat() if user.consent_received_at else ""],
+        ["Версия документа согласия", user.consent_document_version or ""],
         ["Создан", user.created_at.isoformat() if user.created_at else ""],
         ["Обновлен", user.updated_at.isoformat() if user.updated_at else ""],
     ]
@@ -476,6 +495,9 @@ def create_user(
         role_id=data.role_id,
         is_active=data.is_active,
         hire_date=data.hire_date,
+        consent_received=data.consent_received,
+        consent_received_at=data.consent_received_at,
+        consent_document_version=data.consent_document_version,
     )
 
     db.add(new_user)
@@ -493,6 +515,9 @@ def create_user(
             "role_id": new_user.role_id,
             "is_active": new_user.is_active,
             "hire_date": new_user.hire_date,
+            "consent_received": new_user.consent_received,
+            "consent_received_at": new_user.consent_received_at,
+            "consent_document_version": new_user.consent_document_version,
         },
     )
     db.commit()
@@ -546,6 +571,18 @@ def update_user(
     if data.hire_date is not None:
         changes["hire_date"] = (target_user.hire_date, data.hire_date)
         target_user.hire_date = data.hire_date
+    if "consent_received" in data.model_fields_set:
+        changes["consent_received"] = (target_user.consent_received, data.consent_received)
+        target_user.consent_received = data.consent_received
+    if "consent_received_at" in data.model_fields_set:
+        changes["consent_received_at"] = (target_user.consent_received_at, data.consent_received_at)
+        target_user.consent_received_at = data.consent_received_at
+    if "consent_document_version" in data.model_fields_set:
+        changes["consent_document_version"] = (
+            target_user.consent_document_version,
+            data.consent_document_version,
+        )
+        target_user.consent_document_version = data.consent_document_version
 
     log_model_updates(
         db,
@@ -722,6 +759,9 @@ def delete_user(
         "role_id": target_user.role_id,
         "hire_date": target_user.hire_date.isoformat() if target_user.hire_date else None,
         "is_active": bool(target_user.is_active),
+        "consent_received": bool(target_user.consent_received),
+        "consent_received_at": target_user.consent_received_at.isoformat() if target_user.consent_received_at else None,
+        "consent_document_version": target_user.consent_document_version,
         "created_at": target_user.created_at.isoformat() if target_user.created_at else None,
         "updated_at": target_user.updated_at.isoformat() if target_user.updated_at else None,
     }

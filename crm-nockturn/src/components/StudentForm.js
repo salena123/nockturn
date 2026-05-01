@@ -18,6 +18,9 @@ const EMPTY_FORM = {
   comment: '',
   first_contact_date: '',
   birth_date: '',
+  consent_received: false,
+  consent_received_at: '',
+  consent_document_version: '',
 };
 
 const LEVEL_OPTIONS = [
@@ -37,13 +40,10 @@ const normalizeStudentStatus = (status) => {
   if (!status) {
     return 'потенциальный';
   }
-
   return status === 'новый' ? 'потенциальный' : status;
 };
 
-
 const BLOCKED_STATUSES = new Set(['заморожен', 'отказался']);
-
 
 const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
   const [formData, setFormData] = useState(EMPTY_FORM);
@@ -67,6 +67,9 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
         comment: student.comment || '',
         first_contact_date: student.first_contact_date || '',
         birth_date: student.birth_date || '',
+        consent_received: student.consent_received ?? false,
+        consent_received_at: student.consent_received_at ? String(student.consent_received_at).slice(0, 16) : '',
+        consent_document_version: student.consent_document_version || '',
       });
       setError('');
       setStatusWarning(null);
@@ -108,6 +111,9 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
         comment: formData.comment || null,
         first_contact_date: formData.first_contact_date || null,
         birth_date: formData.birth_date || null,
+        consent_received: formData.consent_received,
+        consent_received_at: formData.consent_received_at || null,
+        consent_document_version: formData.consent_document_version || null,
       };
 
       const isAdminLike = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
@@ -157,8 +163,8 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
         <div style={{ marginBottom: 16, padding: 12, border: '1px solid #d39e00', backgroundColor: '#fff3cd' }}>
           <strong>Предупреждение</strong>
           <div style={{ marginTop: 8 }}>
-            У ученика есть будущие занятия: {statusWarning.upcoming_lessons_count}.
-            При смене статуса на {formData.status === 'заморожен' ? '«Заморожен»' : '«Отказался»'} занятия не удалятся автоматически.
+            У ученика есть будущие занятия: {statusWarning.upcoming_lessons_count}. При смене статуса на{' '}
+            {formData.status === 'заморожен' ? '«Заморожен»' : '«Отказался»'} занятия не удалятся автоматически.
           </div>
           {statusWarning.items?.length > 0 && (
             <div style={{ marginTop: 8 }}>
@@ -199,12 +205,7 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
           <label>
             Дата рождения
             <br />
-            <input
-              type="date"
-              name="birth_date"
-              value={formData.birth_date}
-              onChange={handleChange}
-            />
+            <input type="date" name="birth_date" value={formData.birth_date} onChange={handleChange} />
           </label>
         </div>
 
@@ -286,6 +287,44 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
           <label>
             <input
               type="checkbox"
+              name="consent_received"
+              checked={formData.consent_received}
+              onChange={handleChange}
+            />
+            {' '}Согласие на обработку ПДн получено
+          </label>
+        </div>
+
+        <div>
+          <label>
+            Дата и время получения согласия
+            <br />
+            <input
+              type="datetime-local"
+              name="consent_received_at"
+              value={formData.consent_received_at}
+              onChange={handleChange}
+            />
+          </label>
+        </div>
+
+        <div>
+          <label>
+            Версия документа согласия
+            <br />
+            <input
+              type="text"
+              name="consent_document_version"
+              value={formData.consent_document_version}
+              onChange={handleChange}
+            />
+          </label>
+        </div>
+
+        <div>
+          <label>
+            <input
+              type="checkbox"
               name="has_parent"
               checked={formData.has_parent}
               onChange={handleChange}
@@ -314,12 +353,7 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
               <label>
                 Телефон ответственного лица
                 <br />
-                <input
-                  type="text"
-                  name="parent_phone"
-                  value={formData.parent_phone}
-                  onChange={handleChange}
-                />
+                <input type="text" name="parent_phone" value={formData.parent_phone} onChange={handleChange} />
               </label>
             </div>
 

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 from pydantic import BaseModel
 
@@ -17,6 +17,9 @@ class StudentCreate(BaseModel):
     comment: Optional[str] = None
     first_contact_date: Optional[date] = None
     birth_date: Optional[date] = None
+    consent_received: bool = False
+    consent_received_at: Optional[datetime] = None
+    consent_document_version: Optional[str] = None
 
 
 class StudentUpdate(BaseModel):
@@ -33,6 +36,9 @@ class StudentUpdate(BaseModel):
     comment: Optional[str] = None
     first_contact_date: Optional[date] = None
     birth_date: Optional[date] = None
+    consent_received: Optional[bool] = None
+    consent_received_at: Optional[datetime] = None
+    consent_document_version: Optional[str] = None
 
 
 class ParentResponse(BaseModel):
@@ -61,6 +67,9 @@ class StudentResponse(BaseModel):
     comment: Optional[str] = None
     first_contact_date: Optional[date] = None
     birth_date: Optional[date] = None
+    consent_received: bool = False
+    consent_received_at: Optional[datetime] = None
+    consent_document_version: Optional[str] = None
     age: Optional[int] = None
 
     class Config:

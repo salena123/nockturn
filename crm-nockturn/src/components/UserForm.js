@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+
 import api from '../api';
 
 
@@ -10,6 +11,9 @@ const EMPTY_FORM = {
   role_id: '',
   is_active: true,
   hire_date: '',
+  consent_received: false,
+  consent_received_at: '',
+  consent_document_version: '',
   generate_password: false,
 };
 
@@ -46,6 +50,9 @@ const UserForm = ({
         role_id: user.role_id ? String(user.role_id) : '',
         is_active: user.is_active ?? true,
         hire_date: user.hire_date || '',
+        consent_received: user.consent_received ?? false,
+        consent_received_at: user.consent_received_at ? String(user.consent_received_at).slice(0, 16) : '',
+        consent_document_version: user.consent_document_version || '',
         generate_password: false,
       });
       setError('');
@@ -99,6 +106,9 @@ const UserForm = ({
           role_id: formData.role_id ? Number(formData.role_id) : null,
           is_active: formData.is_active,
           hire_date: formData.hire_date || null,
+          consent_received: formData.consent_received,
+          consent_received_at: formData.consent_received_at || null,
+          consent_document_version: formData.consent_document_version || null,
         });
 
         let currentGeneratedPassword = '';
@@ -121,7 +131,6 @@ const UserForm = ({
         if (onUserSuccess) {
           onUserSuccess(updatedUserData, currentGeneratedPassword, true);
         }
-
         if (onUserUpdated) {
           onUserUpdated();
         }
@@ -134,6 +143,9 @@ const UserForm = ({
           role_id: Number(formData.role_id),
           is_active: formData.is_active,
           hire_date: formData.hire_date || null,
+          consent_received: formData.consent_received,
+          consent_received_at: formData.consent_received_at || null,
+          consent_document_version: formData.consent_document_version || null,
           generate_password: formData.generate_password,
         };
         const response = await api.post('/api/users', userData);
@@ -150,7 +162,6 @@ const UserForm = ({
         if (onUserSuccess) {
           onUserSuccess(newUserData, currentGeneratedPassword, false);
         }
-
         if (onUserCreated) {
           onUserCreated();
         }
@@ -191,13 +202,7 @@ const UserForm = ({
           <label>
             Логин
             <br />
-            <input
-              type="text"
-              name="login"
-              value={formData.login}
-              onChange={handleChange}
-              required
-            />
+            <input type="text" name="login" value={formData.login} onChange={handleChange} required />
           </label>
         </div>
 
@@ -205,12 +210,7 @@ const UserForm = ({
           <label>
             ФИО
             <br />
-            <input
-              type="text"
-              name="full_name"
-              value={formData.full_name}
-              onChange={handleChange}
-            />
+            <input type="text" name="full_name" value={formData.full_name} onChange={handleChange} />
           </label>
         </div>
 
@@ -218,12 +218,7 @@ const UserForm = ({
           <label>
             Телефон
             <br />
-            <input
-              type="text"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-            />
+            <input type="text" name="phone" value={formData.phone} onChange={handleChange} />
           </label>
         </div>
 
@@ -241,12 +236,7 @@ const UserForm = ({
                 />
               </div>
             ) : (
-              <select
-                name="role_id"
-                value={formData.role_id}
-                onChange={handleChange}
-                required
-              >
+              <select name="role_id" value={formData.role_id} onChange={handleChange} required>
                 <option value="">Выберите роль</option>
                 {availableRoles.map((role) => (
                   <option key={role.id} value={role.id}>
@@ -262,10 +252,43 @@ const UserForm = ({
           <label>
             Дата начала работы
             <br />
+            <input type="date" name="hire_date" value={formData.hire_date} onChange={handleChange} />
+          </label>
+        </div>
+
+        <div>
+          <label>
             <input
-              type="date"
-              name="hire_date"
-              value={formData.hire_date}
+              type="checkbox"
+              name="consent_received"
+              checked={formData.consent_received}
+              onChange={handleChange}
+            />
+            {' '}Согласие на обработку ПДн получено
+          </label>
+        </div>
+
+        <div>
+          <label>
+            Дата и время получения согласия
+            <br />
+            <input
+              type="datetime-local"
+              name="consent_received_at"
+              value={formData.consent_received_at}
+              onChange={handleChange}
+            />
+          </label>
+        </div>
+
+        <div>
+          <label>
+            Версия документа согласия
+            <br />
+            <input
+              type="text"
+              name="consent_document_version"
+              value={formData.consent_document_version}
               onChange={handleChange}
             />
           </label>
@@ -293,19 +316,14 @@ const UserForm = ({
               checked={formData.generate_password}
               onChange={handleChange}
             />
-            Сгенерировать пароль автоматически
+            {' '}Сгенерировать пароль автоматически
           </label>
         </div>
 
         <div>
           <label>
-            <input
-              type="checkbox"
-              name="is_active"
-              checked={formData.is_active}
-              onChange={handleChange}
-            />
-            Учётная запись активна
+            <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} />
+            {' '}Учётная запись активна
           </label>
         </div>
 

@@ -242,12 +242,12 @@ def get_or_create_parent(
         parent = db.query(Parent).filter(Parent.telegram_id == telegram_id).first()
 
     if not parent:
-        query = db.query(Parent).filter(Parent.full_name == name)
-        if phone is None:
-            query = query.filter(Parent.phone.is_(None))
-        else:
-            query = query.filter(Parent.phone == phone)
-        parent = query.first()
+        for existing_parent in db.query(Parent).all():
+            same_name = existing_parent.full_name == name
+            same_phone = existing_parent.phone == phone
+            if same_name and same_phone:
+                parent = existing_parent
+                break
 
     if not parent:
         parent = Parent(full_name=name, phone=phone, telegram_id=telegram_id)
@@ -283,6 +283,9 @@ def serialize_student(student: Student) -> StudentResponse:
         comment=student.comment,
         first_contact_date=student.first_contact_date,
         birth_date=student.birth_date,
+        consent_received=bool(student.consent_received),
+        consent_received_at=student.consent_received_at,
+        consent_document_version=student.consent_document_version,
         age=get_age(student.birth_date),
     )
 
@@ -354,6 +357,9 @@ def create_student(
         comment=data.comment,
         first_contact_date=data.first_contact_date,
         birth_date=data.birth_date,
+        consent_received=data.consent_received,
+        consent_received_at=data.consent_received_at,
+        consent_document_version=data.consent_document_version,
     )
 
     db.add(new_student)
@@ -377,6 +383,9 @@ def create_student(
             "comment": new_student.comment,
             "first_contact_date": new_student.first_contact_date,
             "birth_date": new_student.birth_date,
+            "consent_received": new_student.consent_received,
+            "consent_received_at": new_student.consent_received_at,
+            "consent_document_version": new_student.consent_document_version,
         },
     )
     db.commit()
@@ -460,6 +469,9 @@ def export_student_xlsx(
         ["Есть ответственное лицо", "Да" if student.has_parent else "Нет"],
         ["ФИО ответственного лица", student.parent_name or ""],
         ["Телефон ответственного лица", parent_phone or ""],
+        ["Согласие на обработку ПДн", "Да" if student.consent_received else "Нет"],
+        ["Дата получения согласия", student.consent_received_at.isoformat() if student.consent_received_at else ""],
+        ["Версия документа согласия", student.consent_document_version or ""],
     ]
 
     output = BytesIO(build_xlsx_bytes(rows))
@@ -583,6 +595,18 @@ def update_student(
     if data.birth_date is not None:
         changes["birth_date"] = (student.birth_date, data.birth_date)
         student.birth_date = data.birth_date
+    if "consent_received" in data.model_fields_set:
+        changes["consent_received"] = (student.consent_received, data.consent_received)
+        student.consent_received = data.consent_received
+    if "consent_received_at" in data.model_fields_set:
+        changes["consent_received_at"] = (student.consent_received_at, data.consent_received_at)
+        student.consent_received_at = data.consent_received_at
+    if "consent_document_version" in data.model_fields_set:
+        changes["consent_document_version"] = (
+            student.consent_document_version,
+            data.consent_document_version,
+        )
+        student.consent_document_version = data.consent_document_version
 
     if data.has_parent is not None:
         changes["has_parent"] = (student.has_parent, data.has_parent)
@@ -666,6 +690,9 @@ def delete_student(
             "parent_id": student.parent_id,
             "parent_name": student.parent_name,
             "status": student.status,
+            "consent_received": student.consent_received,
+            "consent_received_at": student.consent_received_at,
+            "consent_document_version": student.consent_document_version,
         },
     )
     db.delete(student)

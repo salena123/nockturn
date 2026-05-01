@@ -151,31 +151,10 @@ def create_user_document(
 ):
     require_admin(current_user)
     get_user_or_404(db, user_id)
-
-    document = UserDocument(
-        user_id=user_id,
-        document_type=data.document_type,
-        file_path=data.file_path,
-        is_encrypted=False,
+    raise HTTPException(
+        status_code=400,
+        detail="Документы можно добавлять только через загрузку файла, чтобы сохранить их в зашифрованном виде",
     )
-    db.add(document)
-    db.flush()
-    log_entity_change(
-        db,
-        actor_user_id=current_user.id,
-        entity="user_document",
-        entity_id=document.id,
-        action="create",
-        new_value={
-            "user_id": user_id,
-            "document_type": data.document_type,
-            "file_path": data.file_path,
-            "is_encrypted": False,
-        },
-    )
-    db.commit()
-    db.refresh(document)
-    return document
 
 
 @router.post("/users/{user_id}/documents/upload", response_model=UserDocumentResponse)
@@ -231,10 +210,10 @@ def update_user_document(
         changes["document_type"] = (document.document_type, data.document_type)
         document.document_type = data.document_type
     if data.file_path is not None:
-        changes["file_path"] = (document.file_path, data.file_path)
-        document.file_path = data.file_path
-        changes["is_encrypted"] = (document.is_encrypted, False)
-        document.is_encrypted = False
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя напрямую менять путь к файлу документа. Используйте загрузку файла через защищенный endpoint",
+        )
 
     log_model_updates(
         db,

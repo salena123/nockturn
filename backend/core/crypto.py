@@ -45,3 +45,13 @@ def decrypt_text(value: str | None) -> str | None:
     if value in (None, ""):
         return value
     return decrypt_bytes(value.encode("utf-8")).decode("utf-8")
+
+
+def is_encrypted_text(value: str | None) -> bool:
+    if value in (None, ""):
+        return False
+    try:
+        decrypt_text(value)
+        return True
+    except HTTPException:
+        return False

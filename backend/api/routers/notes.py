@@ -136,12 +136,8 @@ def get_staff_users(
     db: Session = Depends(get_db),
 ):
     require_staff(current_user)
-    users = (
-        db.query(User)
-        .options(joinedload(User.role))
-        .order_by(User.full_name.asc(), User.login.asc())
-        .all()
-    )
+    users = db.query(User).options(joinedload(User.role)).all()
+    users.sort(key=lambda user: ((user.full_name or "").lower(), (user.login or "").lower(), user.id))
     return [
         {
             "id": user.id,
