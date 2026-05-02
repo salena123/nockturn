@@ -4,6 +4,7 @@ import React from 'react';
 const UserTable = ({
   users,
   currentUser,
+  onOpenCard,
   onEdit,
   onDelete,
   onToggleBlock,
@@ -40,6 +41,9 @@ const UserTable = ({
             <td>{user.is_active ? 'Да' : 'Нет'}</td>
             <td>{user.hire_date || ''}</td>
             <td>
+              <button type="button" onClick={() => onOpenCard(user)}>
+                Карточка
+              </button>{' '}
               {!(currentUser.role === 'admin' && user.role === 'superadmin') && (
                 <button type="button" onClick={() => onEdit(user)}>
                   Редактировать

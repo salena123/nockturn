@@ -13,3 +13,4 @@ class Payment(Base):
     paid_at = Column(DateTime, server_default=func.now())
     comment = Column(Text)
     status = Column(String(50))
+    subscription_balance_snapshot = Column(Integer, nullable=True)

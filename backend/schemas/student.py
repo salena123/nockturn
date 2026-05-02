@@ -10,7 +10,6 @@ class StudentCreate(BaseModel):
     has_parent: bool = False
     parent_name: Optional[str] = None
     parent_phone: Optional[str] = None
-    parent_telegram_id: Optional[int] = None
     address: Optional[str] = None
     level: Optional[str] = None
     status: Optional[str] = None
@@ -19,7 +18,7 @@ class StudentCreate(BaseModel):
     birth_date: Optional[date] = None
     consent_received: bool = False
     consent_received_at: Optional[datetime] = None
-    consent_document_version: Optional[str] = None
+    bot_mailing_consent: bool = False
 
 
 class StudentUpdate(BaseModel):
@@ -29,7 +28,6 @@ class StudentUpdate(BaseModel):
     has_parent: Optional[bool] = None
     parent_name: Optional[str] = None
     parent_phone: Optional[str] = None
-    parent_telegram_id: Optional[int] = None
     address: Optional[str] = None
     level: Optional[str] = None
     status: Optional[str] = None
@@ -38,7 +36,7 @@ class StudentUpdate(BaseModel):
     birth_date: Optional[date] = None
     consent_received: Optional[bool] = None
     consent_received_at: Optional[datetime] = None
-    consent_document_version: Optional[str] = None
+    bot_mailing_consent: Optional[bool] = None
 
 
 class ParentResponse(BaseModel):
@@ -46,7 +44,6 @@ class ParentResponse(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
-    telegram_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -69,7 +66,7 @@ class StudentResponse(BaseModel):
     birth_date: Optional[date] = None
     consent_received: bool = False
     consent_received_at: Optional[datetime] = None
-    consent_document_version: Optional[str] = None
+    bot_mailing_consent: bool = False
     age: Optional[int] = None
 
     class Config:

@@ -10,6 +10,9 @@ class SubscriptionCreate(BaseModel):
     start_date: date
     end_date: Optional[date] = None
     status: Optional[str] = None
+    freeze_start_date: Optional[date] = None
+    freeze_end_date: Optional[date] = None
+    freeze_reason: Optional[str] = None
     remaining_lessons: Optional[int] = None
     lessons_total: Optional[int] = None
     balance_lessons: Optional[int] = None
@@ -25,6 +28,9 @@ class SubscriptionUpdate(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     status: Optional[str] = None
+    freeze_start_date: Optional[date] = None
+    freeze_end_date: Optional[date] = None
+    freeze_reason: Optional[str] = None
     remaining_lessons: Optional[int] = None
     lessons_total: Optional[int] = None
     balance_lessons: Optional[int] = None
@@ -47,6 +53,9 @@ class SubscriptionResponse(BaseModel):
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     status: Optional[str] = None
+    freeze_start_date: Optional[date] = None
+    freeze_end_date: Optional[date] = None
+    freeze_reason: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:

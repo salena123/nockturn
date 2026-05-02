@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import DeleteConfirm from '../components/DeleteConfirm';
 import api from '../api';
 
@@ -10,7 +10,13 @@ const EMPTY_FORM = {
   start_date: '',
   end_date: '',
   status: 'active',
+  freeze_start_date: '',
+  freeze_end_date: '',
+  freeze_reason: '',
 };
+
+
+const formatTariffType = (value) => (value === 'group' ? 'Групповой' : 'Индивидуальный');
 
 
 const SubscriptionsPage = ({ currentUser }) => {
@@ -33,31 +39,24 @@ const SubscriptionsPage = ({ currentUser }) => {
         api.get('/api/tariffs'),
         api.get('/api/discounts'),
       ]);
-      const subscriptionsWithStudentNames = subscriptionsResponse.data.map(subscription => {
-        const student = studentsResponse.data.find(s => s.id === subscription.student_id);
-        return {
-          ...subscription,
-          student_name: student ? student.fio : `#${subscription.id}`
-        };
-      });
-      setSubscriptions(subscriptionsWithStudentNames);
+      setSubscriptions(subscriptionsResponse.data);
       setStudents(studentsResponse.data);
       setTariffs(tariffsResponse.data);
       setDiscounts(discountsResponse.data);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось загрузить абонементы');
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось загрузить абонементы');
     }
   };
 
   useEffect(() => {
-    const load = async () => {
+    const run = async () => {
       setLoading(true);
       setError('');
       await loadData();
       setLoading(false);
     };
 
-    load();
+    run();
   }, []);
 
   const handleChange = (event) => {
@@ -68,7 +67,41 @@ const SubscriptionsPage = ({ currentUser }) => {
   const resetForm = () => {
     setFormData(EMPTY_FORM);
     setEditingId(null);
+    setError('');
   };
+
+  const selectedTariff = useMemo(
+    () => tariffs.find((item) => item.id === Number(formData.tariff_id)),
+    [formData.tariff_id, tariffs],
+  );
+
+  const selectedDiscount = useMemo(
+    () => discounts.find((item) => item.id === Number(formData.discount_id)),
+    [discounts, formData.discount_id],
+  );
+
+  const pricingPreview = useMemo(() => {
+    if (!selectedTariff) {
+      return null;
+    }
+
+    const lessonsTotal = Math.floor(selectedTariff.lessons_per_week * selectedTariff.duration_months * 4);
+    let pricePerLesson = Number(selectedTariff.price_per_lesson || 0);
+
+    if (selectedDiscount) {
+      if (selectedDiscount.type === 'percentage') {
+        pricePerLesson = pricePerLesson * (1 - Number(selectedDiscount.value) / 100);
+      } else {
+        pricePerLesson = pricePerLesson - Number(selectedDiscount.value);
+      }
+    }
+
+    return {
+      lessonsTotal,
+      pricePerLesson,
+      totalPrice: lessonsTotal * pricePerLesson,
+    };
+  }, [selectedDiscount, selectedTariff]);
 
   const buildPayload = () => ({
     student_id: Number(formData.student_id),
@@ -77,6 +110,9 @@ const SubscriptionsPage = ({ currentUser }) => {
     start_date: formData.start_date || null,
     end_date: formData.end_date || null,
     status: formData.status || 'active',
+    freeze_start_date: formData.status === 'frozen' ? formData.freeze_start_date || null : null,
+    freeze_end_date: formData.status === 'frozen' ? formData.freeze_end_date || null : null,
+    freeze_reason: formData.status === 'frozen' ? formData.freeze_reason.trim() || null : null,
   });
 
   const handleSubmit = async (event) => {
@@ -93,8 +129,8 @@ const SubscriptionsPage = ({ currentUser }) => {
 
       resetForm();
       await loadData();
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось сохранить договор');
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось сохранить абонемент');
     } finally {
       setSubmitting(false);
     }
@@ -109,7 +145,11 @@ const SubscriptionsPage = ({ currentUser }) => {
       start_date: subscription.start_date || '',
       end_date: subscription.end_date || '',
       status: subscription.status || 'active',
+      freeze_start_date: subscription.freeze_start_date || '',
+      freeze_end_date: subscription.freeze_end_date || '',
+      freeze_reason: subscription.freeze_reason || '',
     });
+    setError('');
   };
 
   const handleDelete = async (subscriptionId) => {
@@ -117,22 +157,22 @@ const SubscriptionsPage = ({ currentUser }) => {
       await api.delete(`/api/subscriptions/${subscriptionId}`);
       setDeletingSubscription(null);
       await loadData();
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось удалить абонемент');
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось удалить абонемент');
     }
   };
 
   if (currentUser?.role === 'teacher') {
-    return <div>Раздел договоров доступен только администратору.</div>;
+    return <div>Раздел абонементов доступен только администратору.</div>;
   }
 
   if (loading) {
-    return <div>Загрузка договоров...</div>;
+    return <div>Загрузка абонементов...</div>;
   }
 
   return (
     <div>
-      <h2>Заключенные договоры</h2>
+      <h2>Абонементы</h2>
 
       {error && <div>{error}</div>}
 
@@ -160,7 +200,7 @@ const SubscriptionsPage = ({ currentUser }) => {
               <option value="">Выберите тариф</option>
               {tariffs.map((tariff) => (
                 <option key={tariff.id} value={tariff.id}>
-                  {tariff.name} - {tariff.type === 'individual' ? 'индивидуальный' : 'групповой'} - {tariff.lessons_per_week} раз(а) в неделю - {tariff.price_per_lesson} за занятие - {tariff.duration_months} месяц(а)
+                  {tariff.name} — {formatTariffType(tariff.type)} — {tariff.lessons_per_week} раз(а) в неделю
                 </option>
               ))}
             </select>
@@ -169,13 +209,15 @@ const SubscriptionsPage = ({ currentUser }) => {
 
         <div style={{ marginBottom: '15px' }}>
           <label>
-            Скидка (необязательно):
+            Скидка:
             <br />
             <select name="discount_id" value={formData.discount_id} onChange={handleChange}>
               <option value="">Без скидки</option>
               {discounts.map((discount) => (
                 <option key={discount.id} value={discount.id}>
-                  {discount.name} - {discount.type === 'percentage' ? `${discount.value}%` : `${discount.value}`}
+                  {discount.name}
+                  {discount.condition ? ` (${discount.condition})` : ''}
+                  {discount.type === 'percentage' ? ` — ${discount.value}%` : ` — ${discount.value} ₽`}
                 </option>
               ))}
             </select>
@@ -192,7 +234,7 @@ const SubscriptionsPage = ({ currentUser }) => {
 
         <div style={{ marginBottom: '15px' }}>
           <label>
-            Дата окончания (необязательно):
+            Дата окончания:
             <br />
             <input type="date" name="end_date" value={formData.end_date} onChange={handleChange} />
           </label>
@@ -210,51 +252,73 @@ const SubscriptionsPage = ({ currentUser }) => {
           </label>
         </div>
 
-        {formData.tariff_id && (
-          <div style={{ 
-            border: '1px solid #ccc', 
-            padding: '15px', 
-            marginTop: '20px',
-            backgroundColor: '#f9f9f9'
-          }}>
-            <h4>Предпросмотр цен:</h4>
-            {(() => {
-              const selectedTariff = tariffs.find(t => t.id === parseInt(formData.tariff_id));
-              const selectedDiscount = formData.discount_id ? discounts.find(d => d.id === parseInt(formData.discount_id)) : null;
-              
-              if (!selectedTariff) return <div>Выберите тариф для просмотра цен</div>;
-              
-              const weeksInDuration = selectedTariff.duration_months * 4;
-              const lessonsTotal = Math.floor(selectedTariff.lessons_per_week * weeksInDuration);
-              let pricePerLesson = selectedTariff.price_per_lesson;
-              
-              if (selectedDiscount) {
-                if (selectedDiscount.type === 'percentage') {
-                  pricePerLesson = pricePerLesson * (1 - selectedDiscount.value / 100);
-                } else {
-                  pricePerLesson = pricePerLesson - selectedDiscount.value;
-                }
-              }
-              
-              const totalPrice = lessonsTotal * pricePerLesson;
-              
-              return (
-                <div>
-                  <p><strong>Всего занятий:</strong> {lessonsTotal}</p>
-                  <p><strong>Цена за занятие:</strong> {pricePerLesson.toFixed(2)}</p>
-                  <p><strong>Итоговая цена:</strong> {totalPrice.toFixed(2)}</p>
-                  {selectedDiscount && (
-                    <p><strong>Применена скидка:</strong> {selectedDiscount.name}</p>
-                  )}
-                </div>
-              );
-            })()}
+        {formData.status === 'frozen' && (
+          <div style={{ border: '1px solid #ccc', padding: '15px', marginBottom: '15px' }}>
+            <h4>Параметры заморозки</h4>
+            <div style={{ marginBottom: '10px' }}>
+              <label>
+                Дата начала заморозки:
+                <br />
+                <input
+                  type="date"
+                  name="freeze_start_date"
+                  value={formData.freeze_start_date}
+                  onChange={handleChange}
+                  required
+                />
+              </label>
+            </div>
+            <div style={{ marginBottom: '10px' }}>
+              <label>
+                Дата окончания заморозки:
+                <br />
+                <input
+                  type="date"
+                  name="freeze_end_date"
+                  value={formData.freeze_end_date}
+                  onChange={handleChange}
+                  required
+                />
+              </label>
+            </div>
+            <div style={{ marginBottom: '10px' }}>
+              <label>
+                Причина заморозки:
+                <br />
+                <textarea
+                  name="freeze_reason"
+                  value={formData.freeze_reason}
+                  onChange={handleChange}
+                  rows="3"
+                  placeholder="Например: отпуск семьи"
+                />
+              </label>
+            </div>
+            <div>Срок заморозки не должен превышать 30 дней.</div>
+          </div>
+        )}
+
+        {pricingPreview && (
+          <div
+            style={{
+              border: '1px solid #ccc',
+              padding: '15px',
+              marginTop: '20px',
+              marginBottom: '20px',
+              backgroundColor: '#f9f9f9',
+            }}
+          >
+            <h4>Расчет абонемента</h4>
+            <p><strong>Всего занятий:</strong> {pricingPreview.lessonsTotal}</p>
+            <p><strong>Цена за занятие:</strong> {pricingPreview.pricePerLesson.toFixed(2)}</p>
+            <p><strong>Итоговая цена:</strong> {pricingPreview.totalPrice.toFixed(2)}</p>
+            {selectedDiscount && <p><strong>Применена скидка:</strong> {selectedDiscount.name}</p>}
           </div>
         )}
 
         <div style={{ marginTop: '20px' }}>
           <button type="submit" disabled={submitting}>
-            {submitting ? 'Сохранение...' : editingId ? 'Сохранить изменения' : 'Создать договор'}
+            {submitting ? 'Сохранение...' : editingId ? 'Сохранить изменения' : 'Создать абонемент'}
           </button>{' '}
           <button type="button" onClick={resetForm}>
             Сбросить форму
@@ -262,9 +326,9 @@ const SubscriptionsPage = ({ currentUser }) => {
         </div>
       </form>
 
-      <h3>Список договоров</h3>
+      <h3>Список абонементов</h3>
       {!subscriptions.length ? (
-        <div>Договоры не найдены.</div>
+        <div>Абонементы не найдены.</div>
       ) : (
         <table border="1" cellPadding="6" cellSpacing="0">
           <thead>
@@ -278,15 +342,15 @@ const SubscriptionsPage = ({ currentUser }) => {
               <th>Цена/занятие</th>
               <th>Итоговая цена</th>
               <th>Период</th>
+              <th>Заморозка</th>
               <th>Действия</th>
             </tr>
           </thead>
           <tbody>
             {subscriptions.map((subscription, index) => {
-              const student = students.find(s => s.id === subscription.student_id);
-              const tariff = tariffs.find(t => t.id === subscription.tariff_id);
-              const discount = subscription.discount_id ? discounts.find(d => d.id === subscription.discount_id) : null;
-              
+              const student = students.find((item) => item.id === subscription.student_id);
+              const tariff = tariffs.find((item) => item.id === subscription.tariff_id);
+
               return (
                 <tr key={subscription.id}>
                   <td>{index + 1}</td>
@@ -297,17 +361,20 @@ const SubscriptionsPage = ({ currentUser }) => {
                   <td>{subscription.balance_lessons ?? ''}</td>
                   <td>{subscription.price_per_lesson ?? ''}</td>
                   <td>{subscription.total_price ?? subscription.price ?? ''}</td>
+                  <td>{subscription.start_date || ''} — {subscription.end_date || ''}</td>
                   <td>
-                    {subscription.start_date || ''} - {subscription.end_date || ''}
+                    {subscription.freeze_start_date && subscription.freeze_end_date
+                      ? `${subscription.freeze_start_date} — ${subscription.freeze_end_date}`
+                      : '—'}
                   </td>
                   <td>
                     <button type="button" onClick={() => handleEdit(subscription)}>
                       Редактировать
                     </button>{' '}
                     <button type="button" onClick={() => setDeletingSubscription(subscription)}>
-                    Удалить
-                  </button>
-                </td>
+                      Удалить
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -326,5 +393,6 @@ const SubscriptionsPage = ({ currentUser }) => {
     </div>
   );
 };
+
 
 export default SubscriptionsPage;

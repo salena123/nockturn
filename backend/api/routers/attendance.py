@@ -130,6 +130,16 @@ def resolve_student_subscription(
     if not subscriptions:
         return None
 
+    def is_frozen_on_lesson_day(subscription: Subscription) -> bool:
+        status = str(subscription.status or "").strip().lower()
+        freeze_start = getattr(subscription, "freeze_start_date", None)
+        freeze_end = getattr(subscription, "freeze_end_date", None)
+
+        if freeze_start and freeze_end and lesson_date is not None:
+            return freeze_start <= lesson_date <= freeze_end
+
+        return status == "frozen"
+
     def sort_key(subscription: Subscription):
         return (
             subscription.start_date or date.min,
@@ -137,9 +147,15 @@ def resolve_student_subscription(
             subscription.id or 0,
         )
 
+    available_subscriptions = [
+        subscription for subscription in subscriptions if not is_frozen_on_lesson_day(subscription)
+    ]
+    if not available_subscriptions:
+        return None
+
     active_with_balance = [
         subscription
-        for subscription in subscriptions
+        for subscription in available_subscriptions
         if subscription.status == "active"
         and (subscription.balance_lessons is None or subscription.balance_lessons > 0)
     ]
@@ -147,20 +163,20 @@ def resolve_student_subscription(
         return sorted(active_with_balance, key=sort_key, reverse=True)[0]
 
     active_subscriptions = [
-        subscription for subscription in subscriptions if subscription.status == "active"
+        subscription for subscription in available_subscriptions if subscription.status == "active"
     ]
     if active_subscriptions:
         return sorted(active_subscriptions, key=sort_key, reverse=True)[0]
 
     with_balance = [
         subscription
-        for subscription in subscriptions
+        for subscription in available_subscriptions
         if subscription.balance_lessons is None or subscription.balance_lessons > 0
     ]
     if with_balance:
         return sorted(with_balance, key=sort_key, reverse=True)[0]
 
-    return sorted(subscriptions, key=sort_key, reverse=True)[0]
+    return sorted(available_subscriptions, key=sort_key, reverse=True)[0]
 
 
 def get_lesson_issue_or_404(db: Session, issue_id: int) -> LessonIssue:

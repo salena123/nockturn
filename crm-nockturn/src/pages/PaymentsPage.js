@@ -6,11 +6,23 @@ const EMPTY_FORM = {
   student_id: '',
   subscription_id: '',
   amount: '',
-  method: '',
+  method: 'cash',
   paid_at: '',
   comment: '',
   status: 'paid',
 };
+
+const PAYMENT_METHOD_OPTIONS = [
+  { value: 'qr', label: 'QR' },
+  { value: 'cash', label: 'Наличные' },
+  { value: 'card_transfer', label: 'Перевод на карту' },
+];
+
+const PAYMENT_STATUS_OPTIONS = [
+  { value: 'paid', label: 'Оплачен' },
+  { value: 'pending', label: 'Ожидает оплаты' },
+  { value: 'cancelled', label: 'Отменен' },
+];
 
 
 const PaymentsPage = ({ currentUser }) => {
@@ -33,20 +45,20 @@ const PaymentsPage = ({ currentUser }) => {
       setPayments(paymentsResponse.data);
       setStudents(studentsResponse.data);
       setSubscriptions(subscriptionsResponse.data);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось загрузить платежи');
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось загрузить платежи');
     }
   };
 
   useEffect(() => {
-    const load = async () => {
+    const run = async () => {
       setLoading(true);
       setError('');
       await loadData();
       setLoading(false);
     };
 
-    load();
+    run();
   }, []);
 
   const handleChange = (event) => {
@@ -57,6 +69,7 @@ const PaymentsPage = ({ currentUser }) => {
   const resetForm = () => {
     setFormData(EMPTY_FORM);
     setEditingId(null);
+    setError('');
   };
 
   const buildPayload = () => ({
@@ -65,7 +78,7 @@ const PaymentsPage = ({ currentUser }) => {
     amount: Number(formData.amount),
     method: formData.method || null,
     paid_at: formData.paid_at || null,
-    comment: formData.comment || null,
+    comment: formData.comment.trim() || null,
     status: formData.status || null,
   });
 
@@ -83,8 +96,8 @@ const PaymentsPage = ({ currentUser }) => {
 
       resetForm();
       await loadData();
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось сохранить платеж');
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось сохранить платеж');
     } finally {
       setSubmitting(false);
     }
@@ -96,19 +109,20 @@ const PaymentsPage = ({ currentUser }) => {
       student_id: payment.student_id ? String(payment.student_id) : '',
       subscription_id: payment.subscription_id ? String(payment.subscription_id) : '',
       amount: payment.amount ?? '',
-      method: payment.method || '',
+      method: payment.method || 'cash',
       paid_at: payment.paid_at ? String(payment.paid_at).slice(0, 16) : '',
       comment: payment.comment || '',
       status: payment.status || 'paid',
     });
+    setError('');
   };
 
   const handleDelete = async (paymentId) => {
     try {
       await api.delete(`/api/payments/${paymentId}`);
       await loadData();
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось удалить платеж');
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось удалить платеж');
     }
   };
 
@@ -122,7 +136,7 @@ const PaymentsPage = ({ currentUser }) => {
 
   return (
     <div>
-      <h2>Калькулятор платежей</h2>
+      <h2>Платежи</h2>
 
       {error && <div>{error}</div>}
 
@@ -144,13 +158,13 @@ const PaymentsPage = ({ currentUser }) => {
 
         <div>
           <label>
-            Договор
+            Абонемент
             <br />
             <select name="subscription_id" value={formData.subscription_id} onChange={handleChange}>
               <option value="">Не выбран</option>
               {subscriptions.map((subscription) => (
                 <option key={subscription.id} value={subscription.id}>
-                  #{subscription.id} / student {subscription.student_id}
+                  #{subscription.id} / ученик {subscription.student_id}
                 </option>
               ))}
             </select>
@@ -161,7 +175,7 @@ const PaymentsPage = ({ currentUser }) => {
           <label>
             Сумма
             <br />
-            <input name="amount" value={formData.amount} onChange={handleChange} required />
+            <input name="amount" type="number" step="0.01" value={formData.amount} onChange={handleChange} required />
           </label>
         </div>
 
@@ -169,7 +183,13 @@ const PaymentsPage = ({ currentUser }) => {
           <label>
             Способ оплаты
             <br />
-            <input name="method" value={formData.method} onChange={handleChange} />
+            <select name="method" value={formData.method} onChange={handleChange}>
+              {PAYMENT_METHOD_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 
@@ -185,7 +205,13 @@ const PaymentsPage = ({ currentUser }) => {
           <label>
             Статус
             <br />
-            <input name="status" value={formData.status} onChange={handleChange} />
+            <select name="status" value={formData.status} onChange={handleChange}>
+              {PAYMENT_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 
@@ -205,7 +231,7 @@ const PaymentsPage = ({ currentUser }) => {
         </button>
       </form>
 
-      <h3>Список платежей</h3>
+      <h3>История платежей</h3>
       {!payments.length ? (
         <div>Платежи не найдены.</div>
       ) : (
@@ -214,36 +240,46 @@ const PaymentsPage = ({ currentUser }) => {
             <tr>
               <th>№</th>
               <th>Ученик</th>
-              <th>Договор</th>
+              <th>Абонемент</th>
               <th>Сумма</th>
               <th>Способ</th>
               <th>Дата</th>
               <th>Статус</th>
+              <th>Остаток занятий</th>
               <th>Комментарий</th>
               <th>Действия</th>
             </tr>
           </thead>
           <tbody>
-            {payments.map((payment, index ) => (
-              <tr key={payment.id}>
-                <td>{index + 1}</td>
-                <td>{payment.student_id || ''}</td>
-                <td>{payment.subscription_id || ''}</td>
-                <td>{payment.amount ?? ''}</td>
-                <td>{payment.method || ''}</td>
-                <td>{payment.paid_at || ''}</td>
-                <td>{payment.status || ''}</td>
-                <td>{payment.comment || ''}</td>
-                <td>
-                  <button type="button" onClick={() => handleEdit(payment)}>
-                    Редактировать
-                  </button>{' '}
-                  <button type="button" onClick={() => handleDelete(payment.id)}>
-                    Удалить
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {payments.map((payment, index) => {
+              const student = students.find((item) => item.id === payment.student_id);
+              const methodLabel =
+                PAYMENT_METHOD_OPTIONS.find((option) => option.value === payment.method)?.label || payment.method || '';
+              const statusLabel =
+                PAYMENT_STATUS_OPTIONS.find((option) => option.value === payment.status)?.label || payment.status || '';
+
+              return (
+                <tr key={payment.id}>
+                  <td>{index + 1}</td>
+                  <td>{student?.fio || payment.student_id || ''}</td>
+                  <td>{payment.subscription_id || ''}</td>
+                  <td>{payment.amount ?? ''}</td>
+                  <td>{methodLabel}</td>
+                  <td>{payment.paid_at || ''}</td>
+                  <td>{statusLabel}</td>
+                  <td>{payment.subscription_balance_snapshot ?? '—'}</td>
+                  <td>{payment.comment || ''}</td>
+                  <td>
+                    <button type="button" onClick={() => handleEdit(payment)}>
+                      Редактировать
+                    </button>{' '}
+                    <button type="button" onClick={() => handleDelete(payment.id)}>
+                      Удалить
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

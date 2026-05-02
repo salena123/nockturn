@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || '/api';
+// Local development:
+// REACT_APP_AUTH_API_BASE_URL=http://localhost:8000/api
+//
+// Server / reverse-proxy deployment:
+// REACT_APP_AUTH_API_BASE_URL=/api
+const apiBaseUrl =
+  process.env.REACT_APP_AUTH_API_BASE_URL || process.env.REACT_APP_API_BASE_URL || '/api';
 
 const Login = ({ onLogin }) => {
   const [login, setLogin] = useState('');

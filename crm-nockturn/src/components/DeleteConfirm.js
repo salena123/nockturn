@@ -1,7 +1,15 @@
 import React from 'react';
 
 
-const DeleteConfirm = ({ item, itemType, onConfirm, onCancel }) => {
+const DeleteConfirm = ({
+  item,
+  itemType,
+  onConfirm,
+  onCancel,
+  title = 'Подтверждение удаления',
+  message = null,
+  confirmLabel = 'Да, удалить',
+}) => {
   const getItemName = () => {
     switch (itemType) {
       case 'user':
@@ -38,16 +46,19 @@ const DeleteConfirm = ({ item, itemType, onConfirm, onCancel }) => {
 
   const itemName = getItemName();
   const itemTypeText = getItemTypeText();
+  const defaultMessage = (
+    <>
+      Вы уверены, что хотите удалить {itemTypeText} <strong>{itemName}</strong>?
+    </>
+  );
 
   return (
     <div>
-      <h3>Подтверждение удаления</h3>
-      <p>
-        Вы уверены, что хотите удалить {itemTypeText} <strong>{itemName}</strong>?
-      </p>
+      <h3>{title}</h3>
+      <p>{message || defaultMessage}</p>
 
       <button type="button" onClick={onConfirm}>
-        Да, удалить
+        {confirmLabel}
       </button>{' '}
       <button type="button" onClick={onCancel}>
         Отмена

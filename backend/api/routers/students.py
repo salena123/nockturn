@@ -1,7 +1,5 @@
-from datetime import date, datetime
+﻿from datetime import date, datetime
 from io import BytesIO
-from xml.sax.saxutils import escape
-from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -21,6 +19,7 @@ from models.teacher import Teacher
 from models.user import User
 from schemas.student import StudentCreate, StudentResponse, StudentUpdate
 from schemas.subscription import SubscriptionResponse
+from utils.exporters import build_record_pdf_bytes, build_xlsx_bytes as export_xlsx_bytes
 
 
 router = APIRouter(prefix="/api")
@@ -31,107 +30,15 @@ STATUS_ALIASES = {"новый": "потенциальный"}
 
 
 def build_xlsx_bytes(rows: list[list[str | int | float]]) -> bytes:
-    content_types = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
-  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
-</Types>"""
+    return export_xlsx_bytes(rows)
 
-    rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
-  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
-</Relationships>"""
 
-    workbook = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
- xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <sheets>
-    <sheet name="Student" sheetId="1" r:id="rId1"/>
-  </sheets>
-</workbook>"""
-
-    workbook_rels = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>"""
-
-    styles = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
-  <fills count="2">
-    <fill><patternFill patternType="none"/></fill>
-    <fill><patternFill patternType="gray125"/></fill>
-  </fills>
-  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
-  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>
-  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-</styleSheet>"""
-
-    app = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
- xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
-  <Application>Nockturn CRM</Application>
-</Properties>"""
-
-    created = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-    core = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
- xmlns:dc="http://purl.org/dc/elements/1.1/"
- xmlns:dcterms="http://purl.org/dc/terms/"
- xmlns:dcmitype="http://purl.org/dc/dcmitype/"
- xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:creator>Nockturn CRM</dc:creator>
-  <cp:lastModifiedBy>Nockturn CRM</cp:lastModifiedBy>
-  <dcterms:created xsi:type="dcterms:W3CDTF">{created}</dcterms:created>
-  <dcterms:modified xsi:type="dcterms:W3CDTF">{created}</dcterms:modified>
-</cp:coreProperties>"""
-
-    def column_name(index: int) -> str:
-        result = ""
-        current = index
-        while current >= 0:
-            result = chr(current % 26 + 65) + result
-            current = current // 26 - 1
-        return result
-
-    sheet_rows: list[str] = []
-    for row_index, row in enumerate(rows, start=1):
-        cells: list[str] = []
-        for column_index, value in enumerate(row):
-            cell_ref = f"{column_name(column_index)}{row_index}"
-            value_str = escape("" if value is None else str(value))
-            cells.append(f'<c r="{cell_ref}" t="inlineStr"><is><t>{value_str}</t></is></c>')
-        sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
-
-    worksheet = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <sheetData>
-    {''.join(sheet_rows)}
-  </sheetData>
-</worksheet>"""
-
-    buffer = BytesIO()
-    with ZipFile(buffer, "w", ZIP_DEFLATED) as zip_file:
-        zip_file.writestr("[Content_Types].xml", content_types)
-        zip_file.writestr("_rels/.rels", rels)
-        zip_file.writestr("docProps/app.xml", app)
-        zip_file.writestr("docProps/core.xml", core)
-        zip_file.writestr("xl/workbook.xml", workbook)
-        zip_file.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
-        zip_file.writestr("xl/styles.xml", styles)
-        zip_file.writestr("xl/worksheets/sheet1.xml", worksheet)
-
-    buffer.seek(0)
-    return buffer.getvalue()
+def build_student_pdf_bytes(student: Student) -> bytes:
+    student_name = student.fio or f"Ученик {student.id}"
+    return build_record_pdf_bytes(
+        title=f"Карточка ученика: {student_name}",
+        rows=[(label, str(value)) for label, value in build_student_export_rows(student)],
+    )
 
 
 def get_age(birth_date: date | None) -> int | None:
@@ -231,26 +138,21 @@ def get_or_create_parent(
     db: Session,
     name: str,
     phone: str | None,
-    telegram_id: int | None = None,
 ) -> Parent:
     if not name:
         raise HTTPException(status_code=400, detail="Нужно указать ФИО ответственного лица")
 
     parent = None
 
-    if telegram_id is not None:
-        parent = db.query(Parent).filter(Parent.telegram_id == telegram_id).first()
+    for existing_parent in db.query(Parent).all():
+        same_name = existing_parent.full_name == name
+        same_phone = existing_parent.phone == phone
+        if same_name and same_phone:
+            parent = existing_parent
+            break
 
     if not parent:
-        for existing_parent in db.query(Parent).all():
-            same_name = existing_parent.full_name == name
-            same_phone = existing_parent.phone == phone
-            if same_name and same_phone:
-                parent = existing_parent
-                break
-
-    if not parent:
-        parent = Parent(full_name=name, phone=phone, telegram_id=telegram_id)
+        parent = Parent(full_name=name, phone=phone)
         db.add(parent)
         db.flush()
 
@@ -265,7 +167,6 @@ def serialize_student(student: Student) -> StudentResponse:
             "full_name": student.parent.full_name,
             "phone": student.parent.phone,
             "email": student.parent.email,
-            "telegram_id": student.parent.telegram_id,
         }
 
     return StudentResponse(
@@ -285,9 +186,34 @@ def serialize_student(student: Student) -> StudentResponse:
         birth_date=student.birth_date,
         consent_received=bool(student.consent_received),
         consent_received_at=student.consent_received_at,
-        consent_document_version=student.consent_document_version,
+        bot_mailing_consent=bool(student.bot_mailing_consent),
         age=get_age(student.birth_date),
     )
+
+
+def build_student_export_rows(student: Student) -> list[tuple[str, str | int]]:
+    parent_phone = student.parent.phone if student.parent else None
+    return [
+        ("ФИО ученика", student.fio or "—"),
+        ("Возраст", get_age(student.birth_date) or "—"),
+        ("Дата рождения", student.birth_date.strftime("%d.%m.%Y") if student.birth_date else "—"),
+        ("Основной телефон", student.phone or "—"),
+        ("Email", student.email or "—"),
+        ("Адрес проживания", student.address or "—"),
+        ("Уровень подготовки", student.level or "—"),
+        ("Статус", student.status or "—"),
+        ("Комментарий", student.comment or "—"),
+        ("Дата первого обращения", student.first_contact_date.strftime("%d.%m.%Y") if student.first_contact_date else "—"),
+        ("Есть ответственное лицо", "Да" if student.has_parent else "Нет"),
+        ("ФИО ответственного лица", student.parent_name or "—"),
+        ("Телефон ответственного лица", parent_phone or "—"),
+        ("Согласие на обработку ПДн", "Да" if student.consent_received else "Нет"),
+        (
+            "Дата получения согласия",
+            student.consent_received_at.strftime("%d.%m.%Y %H:%M") if student.consent_received_at else "—",
+        ),
+        ("Согласие на рассылку из бота", "Да" if student.bot_mailing_consent else "Нет"),
+    ]
 
 
 def get_student_or_404(db: Session, student_id: int) -> Student:
@@ -341,7 +267,6 @@ def create_student(
             db,
             data.parent_name,
             data.parent_phone,
-            data.parent_telegram_id,
         )
 
     new_student = Student(
@@ -359,7 +284,7 @@ def create_student(
         birth_date=data.birth_date,
         consent_received=data.consent_received,
         consent_received_at=data.consent_received_at,
-        consent_document_version=data.consent_document_version,
+        bot_mailing_consent=data.bot_mailing_consent,
     )
 
     db.add(new_student)
@@ -385,7 +310,7 @@ def create_student(
             "birth_date": new_student.birth_date,
             "consent_received": new_student.consent_received,
             "consent_received_at": new_student.consent_received_at,
-            "consent_document_version": new_student.consent_document_version,
+            "bot_mailing_consent": new_student.bot_mailing_consent,
         },
     )
     db.commit()
@@ -471,7 +396,7 @@ def export_student_xlsx(
         ["Телефон ответственного лица", parent_phone or ""],
         ["Согласие на обработку ПДн", "Да" if student.consent_received else "Нет"],
         ["Дата получения согласия", student.consent_received_at.isoformat() if student.consent_received_at else ""],
-        ["Версия документа согласия", student.consent_document_version or ""],
+        ["Согласие на рассылку в боте", "Да" if student.bot_mailing_consent else "Нет"],
     ]
 
     output = BytesIO(build_xlsx_bytes(rows))
@@ -479,6 +404,28 @@ def export_student_xlsx(
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/students/{student_id}/export/pdf")
+def export_student_pdf(
+    student_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_staff(current_user)
+    student = ensure_student_access(db, current_user, student_id)
+
+    try:
+        output = BytesIO(build_student_pdf_bytes(student))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    filename = f"student_{student.id}.pdf"
+    return StreamingResponse(
+        output,
+        media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -601,12 +548,9 @@ def update_student(
     if "consent_received_at" in data.model_fields_set:
         changes["consent_received_at"] = (student.consent_received_at, data.consent_received_at)
         student.consent_received_at = data.consent_received_at
-    if "consent_document_version" in data.model_fields_set:
-        changes["consent_document_version"] = (
-            student.consent_document_version,
-            data.consent_document_version,
-        )
-        student.consent_document_version = data.consent_document_version
+    if "bot_mailing_consent" in data.model_fields_set:
+        changes["bot_mailing_consent"] = (student.bot_mailing_consent, data.bot_mailing_consent)
+        student.bot_mailing_consent = data.bot_mailing_consent
 
     if data.has_parent is not None:
         changes["has_parent"] = (student.has_parent, data.has_parent)
@@ -615,11 +559,6 @@ def update_student(
     if student.has_parent:
         parent_name = data.parent_name or student.parent_name
         parent_phone = data.parent_phone or (student.parent.phone if student.parent else student.phone)
-        parent_telegram_id = (
-            data.parent_telegram_id
-            if data.parent_telegram_id is not None
-            else (student.parent.telegram_id if student.parent else None)
-        )
 
         if not parent_name:
             raise HTTPException(status_code=400, detail="Нужно указать ФИО ответственного лица")
@@ -631,17 +570,15 @@ def update_student(
                 changes["parent_phone"] = (existing_parent.phone, parent_phone)
                 existing_parent.full_name = parent_name
                 existing_parent.phone = parent_phone
-                if data.parent_telegram_id is not None:
-                    existing_parent.telegram_id = data.parent_telegram_id
                 student.parent_name = existing_parent.full_name
             else:
-                parent = get_or_create_parent(db, parent_name, parent_phone, parent_telegram_id)
+                parent = get_or_create_parent(db, parent_name, parent_phone)
                 changes["parent_id"] = (student.parent_id, parent.id)
                 changes["parent_name"] = (student.parent_name, parent.full_name)
                 student.parent_id = parent.id
                 student.parent_name = parent.full_name
         else:
-            parent = get_or_create_parent(db, parent_name, parent_phone, parent_telegram_id)
+            parent = get_or_create_parent(db, parent_name, parent_phone)
             changes["parent_id"] = (student.parent_id, parent.id)
             changes["parent_name"] = (student.parent_name, parent.full_name)
             student.parent_id = parent.id
@@ -692,7 +629,7 @@ def delete_student(
             "status": student.status,
             "consent_received": student.consent_received,
             "consent_received_at": student.consent_received_at,
-            "consent_document_version": student.consent_document_version,
+            "bot_mailing_consent": student.bot_mailing_consent,
         },
     )
     db.delete(student)

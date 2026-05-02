@@ -13,7 +13,6 @@ class UserCreate(BaseModel):
     hire_date: Optional[date] = None
     consent_received: bool = False
     consent_received_at: Optional[datetime] = None
-    consent_document_version: Optional[str] = Field(default=None, max_length=100)
     generate_password: bool = False
 
 
@@ -26,7 +25,6 @@ class UserUpdate(BaseModel):
     hire_date: Optional[date] = None
     consent_received: Optional[bool] = None
     consent_received_at: Optional[datetime] = None
-    consent_document_version: Optional[str] = Field(default=None, max_length=100)
 
 
 class UserPasswordResetRequest(BaseModel):
@@ -50,7 +48,6 @@ class UserResponse(BaseModel):
     hire_date: Optional[date] = None
     consent_received: bool = False
     consent_received_at: Optional[datetime] = None
-    consent_document_version: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

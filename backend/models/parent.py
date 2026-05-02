@@ -11,4 +11,3 @@ class Parent(Base):
     full_name = Column(EncryptedText())
     phone = Column(EncryptedText())
     email = Column(EncryptedText())
-    telegram_id = Column(Integer)

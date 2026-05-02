@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric
+from sqlalchemy import Column, Integer, Numeric, String, Text
 from .base import Base
 
 
@@ -7,5 +7,6 @@ class DiscountRule(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255))
-    type = Column(String(20))  
+    type = Column(String(20))
     value = Column(Numeric(10, 2))
+    condition = Column(Text, nullable=True)

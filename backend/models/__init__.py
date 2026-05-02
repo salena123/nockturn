@@ -22,6 +22,7 @@ from .scheduleRecurring import ScheduleRecurring
 from .entityChangeLog import EntityChangeLog
 from .userDocument import UserDocument
 from .archivedUser import ArchivedUser
+from .archivedUserActionLog import ArchivedUserActionLog
 from .studentWaitlist import StudentWaitlist
 from .studentNote import StudentNote
 from .notification import Notification

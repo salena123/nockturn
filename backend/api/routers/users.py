@@ -7,6 +7,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from core.access import require_admin
@@ -14,7 +15,10 @@ from core.deps import get_current_user, get_db
 from core.entity_changes import log_entity_change, log_model_updates
 from core.security import generate_password, hash_password, is_strong_password
 from models.archivedUser import ArchivedUser
+from models.archivedUserActionLog import ArchivedUserActionLog
 from models.entityChangeLog import EntityChangeLog
+from models.note import Note
+from models.notification import Notification
 from models.role import Role
 from models.scheduleEvent import ScheduleEvent
 from models.studentWaitlist import StudentWaitlist
@@ -171,7 +175,6 @@ def serialize_user(user: User) -> UserResponse:
         hire_date=user.hire_date,
         consent_received=bool(user.consent_received),
         consent_received_at=user.consent_received_at,
-        consent_document_version=user.consent_document_version,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -216,6 +219,36 @@ def serialize_archived_user(item: ArchivedUser) -> dict:
     }
 
 
+def serialize_user_document(item: UserDocument) -> dict:
+    return {
+        "id": item.id,
+        "user_id": item.user_id,
+        "document_type": item.document_type,
+        "file_path": item.file_path,
+        "is_encrypted": bool(item.is_encrypted),
+        "created_at": item.created_at,
+    }
+
+
+def serialize_archived_action_log(item: ArchivedUserActionLog) -> dict:
+    return {
+        "id": item.id,
+        "original_log_id": item.original_log_id,
+        "actor_user_id": item.actor_user_id,
+        "actor_user_name": item.actor_user_name,
+        "ip_address": item.ip_address,
+        "entity": item.entity,
+        "entity_id": item.entity_id,
+        "field_name": item.field_name,
+        "old_value": item.old_value,
+        "new_value": item.new_value,
+        "action": item.action,
+        "archived_context": item.archived_context,
+        "created_at": item.created_at,
+        "archived_at": item.archived_at,
+    }
+
+
 def get_archived_user_or_404(db: Session, archive_id: int) -> ArchivedUser:
     archived_user = (
         db.query(ArchivedUser)
@@ -226,6 +259,40 @@ def get_archived_user_or_404(db: Session, archive_id: int) -> ArchivedUser:
     if not archived_user:
         raise HTTPException(status_code=404, detail="Архивная запись сотрудника не найдена")
     return archived_user
+
+
+def get_user_history_items(db: Session, user_id: int) -> list[EntityChangeLog]:
+    return (
+        db.query(EntityChangeLog)
+        .options(joinedload(EntityChangeLog.actor_user))
+        .filter(EntityChangeLog.entity == "user")
+        .filter(EntityChangeLog.entity_id == user_id)
+        .order_by(EntityChangeLog.created_at.desc(), EntityChangeLog.id.desc())
+        .all()
+    )
+
+
+def get_user_document_history_items(db: Session, document_ids: list[int]) -> list[EntityChangeLog]:
+    if not document_ids:
+        return []
+    return (
+        db.query(EntityChangeLog)
+        .options(joinedload(EntityChangeLog.actor_user))
+        .filter(EntityChangeLog.entity == "user_document")
+        .filter(EntityChangeLog.entity_id.in_(document_ids))
+        .order_by(EntityChangeLog.created_at.desc(), EntityChangeLog.id.desc())
+        .all()
+    )
+
+
+def get_user_activity_items(db: Session, user_id: int) -> list[EntityChangeLog]:
+    return (
+        db.query(EntityChangeLog)
+        .options(joinedload(EntityChangeLog.actor_user))
+        .filter(EntityChangeLog.actor_user_id == user_id)
+        .order_by(EntityChangeLog.created_at.desc(), EntityChangeLog.id.desc())
+        .all()
+    )
 
 
 def get_role_or_404(db: Session, role_id: int) -> Role:
@@ -313,6 +380,47 @@ def get_archived_users(
     return [serialize_archived_user(item) for item in archived_users]
 
 
+@router.get("/archived-users/{archive_id}")
+def get_archived_user_detail(
+    archive_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(current_user)
+    archived_user = get_archived_user_or_404(db, archive_id)
+    snapshot = None
+    if archived_user.snapshot_json:
+        try:
+            snapshot = json.loads(archived_user.snapshot_json)
+        except json.JSONDecodeError:
+            snapshot = None
+    archived_actions = (
+        db.query(ArchivedUserActionLog)
+        .filter(ArchivedUserActionLog.archived_user_id == archive_id)
+        .order_by(ArchivedUserActionLog.created_at.desc(), ArchivedUserActionLog.id.desc())
+        .all()
+    )
+    return {
+        "archive": serialize_archived_user(archived_user),
+        "snapshot": snapshot,
+        "actions": [serialize_archived_action_log(item) for item in archived_actions],
+    }
+
+
+@router.delete("/archived-users/{archive_id}")
+def permanently_delete_archived_user(
+    archive_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(current_user)
+    archived_user = get_archived_user_or_404(db, archive_id)
+    db.query(ArchivedUserActionLog).filter(ArchivedUserActionLog.archived_user_id == archive_id).delete()
+    db.delete(archived_user)
+    db.commit()
+    return {"message": "Архивная запись сотрудника удалена без возможности восстановления"}
+
+
 @router.post("/archived-users/{archive_id}/restore", response_model=UserWithPasswordResponse)
 def restore_archived_user(
     archive_id: int,
@@ -348,7 +456,6 @@ def restore_archived_user(
         consent_received_at=datetime.fromisoformat(snapshot["consent_received_at"])
         if snapshot.get("consent_received_at")
         else None,
-        consent_document_version=snapshot.get("consent_document_version"),
     )
     db.add(restored_user)
     db.flush()
@@ -384,10 +491,10 @@ def restore_archived_user(
             "hire_date": restored_user.hire_date,
             "consent_received": restored_user.consent_received,
             "consent_received_at": restored_user.consent_received_at,
-            "consent_document_version": restored_user.consent_document_version,
         },
     )
 
+    db.query(ArchivedUserActionLog).filter(ArchivedUserActionLog.archived_user_id == archived_user.id).delete()
     db.delete(archived_user)
     db.commit()
     db.refresh(restored_user)
@@ -408,6 +515,42 @@ def get_user(
     return serialize_user(get_user_or_404(db, user_id))
 
 
+@router.get("/users/{user_id}/card")
+def get_user_card(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_admin(current_user)
+    user = get_user_or_404(db, user_id)
+    teacher_profile = db.query(Teacher).filter(Teacher.user_id == user.id).first()
+    documents = (
+        db.query(UserDocument)
+        .filter(UserDocument.user_id == user.id)
+        .order_by(UserDocument.created_at.desc(), UserDocument.id.desc())
+        .all()
+    )
+    document_ids = [document.id for document in documents]
+    return {
+        "user": serialize_user(user),
+        "teacher_profile": {
+            "id": teacher_profile.id,
+            "bio": teacher_profile.bio,
+            "experience_years": teacher_profile.experience_years,
+            "specialization": teacher_profile.specialization,
+        }
+        if teacher_profile
+        else None,
+        "documents": [serialize_user_document(document) for document in documents],
+        "history": [serialize_history_item(item) for item in get_user_history_items(db, user.id)],
+        "document_history": [
+            serialize_history_item(item)
+            for item in get_user_document_history_items(db, document_ids)
+        ],
+        "activity": [serialize_history_item(item) for item in get_user_activity_items(db, user.id)],
+    }
+
+
 @router.get("/users/{user_id}/history")
 def get_user_history(
     user_id: int,
@@ -416,14 +559,7 @@ def get_user_history(
 ):
     require_admin(current_user)
     get_user_or_404(db, user_id)
-    history_items = (
-        db.query(EntityChangeLog)
-        .options(joinedload(EntityChangeLog.actor_user))
-        .filter(EntityChangeLog.entity == "user")
-        .filter(EntityChangeLog.entity_id == user_id)
-        .order_by(EntityChangeLog.created_at.desc(), EntityChangeLog.id.desc())
-        .all()
-    )
+    history_items = get_user_history_items(db, user_id)
     return [serialize_history_item(item) for item in history_items]
 
 
@@ -447,7 +583,6 @@ def export_user_xlsx(
         ["Дата начала работы", user.hire_date.isoformat() if user.hire_date else ""],
         ["Согласие на обработку ПДн", "Да" if user.consent_received else "Нет"],
         ["Дата получения согласия", user.consent_received_at.isoformat() if user.consent_received_at else ""],
-        ["Версия документа согласия", user.consent_document_version or ""],
         ["Создан", user.created_at.isoformat() if user.created_at else ""],
         ["Обновлен", user.updated_at.isoformat() if user.updated_at else ""],
     ]
@@ -497,7 +632,6 @@ def create_user(
         hire_date=data.hire_date,
         consent_received=data.consent_received,
         consent_received_at=data.consent_received_at,
-        consent_document_version=data.consent_document_version,
     )
 
     db.add(new_user)
@@ -517,7 +651,6 @@ def create_user(
             "hire_date": new_user.hire_date,
             "consent_received": new_user.consent_received,
             "consent_received_at": new_user.consent_received_at,
-            "consent_document_version": new_user.consent_document_version,
         },
     )
     db.commit()
@@ -577,12 +710,6 @@ def update_user(
     if "consent_received_at" in data.model_fields_set:
         changes["consent_received_at"] = (target_user.consent_received_at, data.consent_received_at)
         target_user.consent_received_at = data.consent_received_at
-    if "consent_document_version" in data.model_fields_set:
-        changes["consent_document_version"] = (
-            target_user.consent_document_version,
-            data.consent_document_version,
-        )
-        target_user.consent_document_version = data.consent_document_version
 
     log_model_updates(
         db,
@@ -751,6 +878,9 @@ def delete_user(
                 ),
             )
 
+    user_documents = db.query(UserDocument).filter(UserDocument.user_id == user_id).all()
+    user_document_ids = [document.id for document in user_documents]
+
     snapshot = {
         "id": target_user.id,
         "login": target_user.login,
@@ -761,9 +891,18 @@ def delete_user(
         "is_active": bool(target_user.is_active),
         "consent_received": bool(target_user.consent_received),
         "consent_received_at": target_user.consent_received_at.isoformat() if target_user.consent_received_at else None,
-        "consent_document_version": target_user.consent_document_version,
         "created_at": target_user.created_at.isoformat() if target_user.created_at else None,
         "updated_at": target_user.updated_at.isoformat() if target_user.updated_at else None,
+        "documents": [
+            {
+                "id": document.id,
+                "document_type": document.document_type,
+                "file_path": document.file_path,
+                "is_encrypted": bool(document.is_encrypted),
+                "created_at": document.created_at.isoformat() if document.created_at else None,
+            }
+            for document in user_documents
+        ],
     }
     if teacher_profile is not None:
         snapshot["teacher_profile"] = {
@@ -772,18 +911,68 @@ def delete_user(
             "specialization": teacher_profile.specialization,
         }
 
-    db.add(
-        ArchivedUser(
-            original_user_id=target_user.id,
-            login=target_user.login,
-            full_name=target_user.full_name,
-            phone=target_user.phone,
-            role_id=target_user.role_id,
-            hire_date=target_user.hire_date,
-            archived_by=current_user.id,
-            snapshot_json=json.dumps(snapshot, ensure_ascii=False),
-        )
+    archived_user = ArchivedUser(
+        original_user_id=target_user.id,
+        login=target_user.login,
+        full_name=target_user.full_name,
+        phone=target_user.phone,
+        role_id=target_user.role_id,
+        hire_date=target_user.hire_date,
+        archived_by=current_user.id,
+        snapshot_json=json.dumps(snapshot, ensure_ascii=False),
     )
+    db.add(archived_user)
+    db.flush()
+
+    archive_filters = [
+        EntityChangeLog.actor_user_id == target_user.id,
+        and_(EntityChangeLog.entity == "user", EntityChangeLog.entity_id == target_user.id),
+    ]
+    if user_document_ids:
+        archive_filters.append(
+            and_(
+                EntityChangeLog.entity == "user_document",
+                EntityChangeLog.entity_id.in_(user_document_ids),
+            )
+        )
+
+    archived_logs = (
+        db.query(EntityChangeLog)
+        .options(joinedload(EntityChangeLog.actor_user))
+        .filter(or_(*archive_filters))
+        .order_by(EntityChangeLog.created_at.desc(), EntityChangeLog.id.desc())
+        .all()
+    )
+
+    archived_log_ids: set[int] = set()
+    for item in archived_logs:
+        if item.id in archived_log_ids:
+            continue
+        archived_log_ids.add(item.id)
+        context = "performed_action"
+        if item.entity == "user_document" and item.entity_id in user_document_ids:
+            context = "document_history"
+        elif item.entity == "user" and item.entity_id == target_user.id and item.actor_user_id != target_user.id:
+            context = "account_history"
+
+        db.add(
+            ArchivedUserActionLog(
+                archived_user_id=archived_user.id,
+                original_log_id=item.id,
+                actor_user_id=item.actor_user_id,
+                actor_user_name=get_actor_display_name(item.actor_user),
+                ip_address=item.ip_address,
+                entity=item.entity,
+                entity_id=item.entity_id,
+                field_name=item.field_name,
+                old_value=item.old_value,
+                new_value=item.new_value,
+                action=item.action,
+                archived_context=context,
+                created_at=item.created_at,
+            )
+        )
+
     log_entity_change(
         db,
         actor_user_id=current_user.id,
@@ -795,8 +984,27 @@ def delete_user(
 
     from models.refreshToken import RefreshToken
 
+    db.query(ArchivedUser).filter(ArchivedUser.archived_by == user_id).update(
+        {ArchivedUser.archived_by: None},
+        synchronize_session=False,
+    )
+    db.query(Note).filter(Note.author_id == user_id).update(
+        {Note.author_id: None},
+        synchronize_session=False,
+    )
+    db.query(Note).filter(Note.recipient_user_id == user_id).update(
+        {Note.recipient_user_id: None},
+        synchronize_session=False,
+    )
+    db.query(Notification).filter(Notification.user_id == user_id).update(
+        {Notification.user_id: None},
+        synchronize_session=False,
+    )
     db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete()
-    user_documents = db.query(UserDocument).filter(UserDocument.user_id == user_id).all()
+    if archived_log_ids:
+        db.query(EntityChangeLog).filter(EntityChangeLog.id.in_(archived_log_ids)).delete(
+            synchronize_session=False
+        )
     for document in user_documents:
         delete_document_file(document.file_path)
         db.delete(document)

@@ -11,6 +11,15 @@ In the project directory, you can run:
 Runs the app in the development mode.\
 Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
 
+For local API development the project uses `crm-nockturn/.env.development.local`:
+
+```env
+REACT_APP_API_BASE_URL=http://localhost:8000
+REACT_APP_AUTH_API_BASE_URL=http://localhost:8000/api
+```
+
+Server values are kept in comments inside that file so you can switch back before a production build.
+
 The page will reload when you make changes.\
 You may also see any lint errors in the console.
 

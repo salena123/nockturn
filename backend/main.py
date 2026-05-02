@@ -52,14 +52,18 @@ def ensure_extended_schema() -> None:
         "ALTER TABLE users ALTER COLUMN phone TYPE TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_received BOOLEAN DEFAULT false",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_received_at TIMESTAMP",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_document_version VARCHAR(100)",
         "ALTER TABLE students ALTER COLUMN fio TYPE TEXT",
         "ALTER TABLE students ALTER COLUMN phone TYPE TEXT",
         "ALTER TABLE students ALTER COLUMN email TYPE TEXT",
         "ALTER TABLE students ALTER COLUMN parent_name TYPE TEXT",
         "ALTER TABLE students ADD COLUMN IF NOT EXISTS consent_received BOOLEAN DEFAULT false",
         "ALTER TABLE students ADD COLUMN IF NOT EXISTS consent_received_at TIMESTAMP",
-        "ALTER TABLE students ADD COLUMN IF NOT EXISTS consent_document_version VARCHAR(100)",
+        "ALTER TABLE students ADD COLUMN IF NOT EXISTS bot_mailing_consent BOOLEAN DEFAULT false",
+        "ALTER TABLE discount_rules ADD COLUMN IF NOT EXISTS condition TEXT",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS freeze_start_date DATE",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS freeze_end_date DATE",
+        "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS freeze_reason TEXT",
+        "ALTER TABLE payments ADD COLUMN IF NOT EXISTS subscription_balance_snapshot INTEGER",
         "ALTER TABLE parents ALTER COLUMN full_name TYPE TEXT",
         "ALTER TABLE parents ALTER COLUMN phone TYPE TEXT",
         "ALTER TABLE parents ALTER COLUMN email TYPE TEXT",
@@ -68,6 +72,27 @@ def ensure_extended_schema() -> None:
         "ALTER TABLE archived_users ALTER COLUMN snapshot_json TYPE TEXT",
         "ALTER TABLE entity_change_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(64)",
         "ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false",
+        """
+        CREATE TABLE IF NOT EXISTS archived_user_action_logs (
+            id SERIAL PRIMARY KEY,
+            archived_user_id INTEGER NOT NULL REFERENCES archived_users(id),
+            original_log_id INTEGER,
+            actor_user_id INTEGER,
+            actor_user_name VARCHAR(255),
+            ip_address VARCHAR(64),
+            entity VARCHAR(100) NOT NULL,
+            entity_id INTEGER NOT NULL,
+            field_name VARCHAR(100),
+            old_value TEXT,
+            new_value TEXT,
+            action VARCHAR(50) NOT NULL,
+            archived_context VARCHAR(50) NOT NULL DEFAULT 'performed_action',
+            created_at TIMESTAMP NOT NULL,
+            archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_archived_user_action_logs_archived_user_id ON archived_user_action_logs(archived_user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_archived_user_action_logs_original_log_id ON archived_user_action_logs(original_log_id)",
     ]
     with engine.begin() as connection:
         for statement in statements:

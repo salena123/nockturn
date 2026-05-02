@@ -13,7 +13,6 @@ const EMPTY_FORM = {
   hire_date: '',
   consent_received: false,
   consent_received_at: '',
-  consent_document_version: '',
   generate_password: false,
 };
 
@@ -52,7 +51,6 @@ const UserForm = ({
         hire_date: user.hire_date || '',
         consent_received: user.consent_received ?? false,
         consent_received_at: user.consent_received_at ? String(user.consent_received_at).slice(0, 16) : '',
-        consent_document_version: user.consent_document_version || '',
         generate_password: false,
       });
       setError('');
@@ -71,28 +69,36 @@ const UserForm = ({
     }));
   };
 
+  const validatePassword = () => {
+    if (!user?.id && !formData.generate_password && !formData.password) {
+      return 'Введите пароль или включите автоматическую генерацию';
+    }
+
+    if (!formData.password || formData.generate_password) {
+      return null;
+    }
+
+    if (formData.password.length < 8) {
+      return 'Пароль должен быть не короче 8 символов';
+    }
+
+    const hasLetter = /[^\d\s]/.test(formData.password);
+    const hasDigit = /\d/.test(formData.password);
+    if (!hasLetter || !hasDigit) {
+      return 'Пароль должен содержать буквы и цифры';
+    }
+
+    return null;
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setLoading(true);
     setError('');
 
-    if (!user?.id && !formData.generate_password && formData.password) {
-      if (formData.password.length < 8) {
-        setError('Пароль должен быть не короче 8 символов');
-        setLoading(false);
-        return;
-      }
-      const hasLetter = /[^\d\s]/.test(formData.password);
-      const hasDigit = /\d/.test(formData.password);
-      if (!hasLetter || !hasDigit) {
-        setError('Пароль должен содержать буквы и цифры');
-        setLoading(false);
-        return;
-      }
-    }
-
-    if (!user?.id && !formData.password && !formData.generate_password) {
-      setError('Введите пароль или включите автоматическую генерацию');
+    const passwordError = validatePassword();
+    if (passwordError) {
+      setError(passwordError);
       setLoading(false);
       return;
     }
@@ -108,7 +114,6 @@ const UserForm = ({
           hire_date: formData.hire_date || null,
           consent_received: formData.consent_received,
           consent_received_at: formData.consent_received_at || null,
-          consent_document_version: formData.consent_document_version || null,
         });
 
         let currentGeneratedPassword = '';
@@ -128,14 +133,10 @@ const UserForm = ({
           is_active: formData.is_active,
         };
 
-        if (onUserSuccess) {
-          onUserSuccess(updatedUserData, currentGeneratedPassword, true);
-        }
-        if (onUserUpdated) {
-          onUserUpdated();
-        }
+        onUserSuccess?.(updatedUserData, currentGeneratedPassword, true);
+        onUserUpdated?.();
       } else {
-        const userData = {
+        const response = await api.post('/api/users', {
           login: formData.login,
           password: formData.password || null,
           full_name: formData.full_name || null,
@@ -145,11 +146,8 @@ const UserForm = ({
           hire_date: formData.hire_date || null,
           consent_received: formData.consent_received,
           consent_received_at: formData.consent_received_at || null,
-          consent_document_version: formData.consent_document_version || null,
           generate_password: formData.generate_password,
-        };
-        const response = await api.post('/api/users', userData);
-        const currentGeneratedPassword = response.data.generated_password || '';
+        });
 
         const newUserData = {
           login: formData.login,
@@ -159,32 +157,12 @@ const UserForm = ({
           is_active: formData.is_active,
         };
 
-        if (onUserSuccess) {
-          onUserSuccess(newUserData, currentGeneratedPassword, false);
-        }
-        if (onUserCreated) {
-          onUserCreated();
-        }
+        onUserSuccess?.(newUserData, response.data.generated_password || '', false);
+        onUserCreated?.();
       }
     } catch (err) {
-      if (err.response?.data?.detail && Array.isArray(err.response.data.detail)) {
-        const validationErrors = err.response.data.detail;
-        const errorMessages = validationErrors.map((validationError) => {
-          const fieldName = validationError.loc[1];
-          const message = validationError.msg;
-
-          if (message.includes('at least 3 characters')) {
-            return 'Логин: минимум 3 символа';
-          }
-          if (message.includes('at least 8 characters')) {
-            return 'Пароль: минимум 8 символов';
-          }
-          if (message.includes('String should have at least')) {
-            return `${fieldName}: минимум ${validationError.ctx?.min_length || ''} символов`;
-          }
-          return message;
-        });
-        setError(errorMessages.join('. '));
+      if (Array.isArray(err.response?.data?.detail)) {
+        setError(err.response.data.detail.map((item) => item.msg).join('. '));
       } else {
         setError(err.response?.data?.detail || 'Ошибка сохранения пользователя');
       }
@@ -227,14 +205,12 @@ const UserForm = ({
             Роль
             <br />
             {user?.id && user.id === currentUser?.id ? (
-              <div>
-                <input
-                  type="text"
-                  value={getRoleLabel(availableRoles.find((role) => role.id === Number(formData.role_id))?.name)}
-                  disabled
-                  style={{ backgroundColor: '#f5f5f5', color: '#666' }}
-                />
-              </div>
+              <input
+                type="text"
+                value={getRoleLabel(availableRoles.find((role) => role.id === Number(formData.role_id))?.name)}
+                disabled
+                style={{ backgroundColor: '#f5f5f5', color: '#666' }}
+              />
             ) : (
               <select name="role_id" value={formData.role_id} onChange={handleChange} required>
                 <option value="">Выберите роль</option>
@@ -276,19 +252,6 @@ const UserForm = ({
               type="datetime-local"
               name="consent_received_at"
               value={formData.consent_received_at}
-              onChange={handleChange}
-            />
-          </label>
-        </div>
-
-        <div>
-          <label>
-            Версия документа согласия
-            <br />
-            <input
-              type="text"
-              name="consent_document_version"
-              value={formData.consent_document_version}
               onChange={handleChange}
             />
           </label>

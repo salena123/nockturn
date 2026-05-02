@@ -20,7 +20,6 @@ class User(Base):
     hire_date = Column(Date)
     consent_received = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     consent_received_at = Column(DateTime)
-    consent_document_version = Column(String(100))
     failed_login_attempts = Column(Integer, default=0, server_default=text("0"), nullable=False)
     locked_until = Column(DateTime)
     last_login_at = Column(DateTime)

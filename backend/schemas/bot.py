@@ -61,3 +61,21 @@ class BotScheduleResponse(BaseModel):
     student_id: int
     student_name: str
     items: list[BotScheduleItem]
+
+
+class BotAbsenceReportRequest(BaseModel):
+    lesson_id: int
+    reason: str
+    comment: str | None = None
+
+
+class BotAbsenceReportResponse(BaseModel):
+    student_id: int
+    student_name: str
+    lesson_id: int
+    attendance_id: int
+    status: str
+    notified_at: datetime
+    can_transfer: bool
+    lesson_start_time: datetime
+    message: str

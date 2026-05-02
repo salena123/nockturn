@@ -40,7 +40,6 @@ def serialize_teacher_with_details(
             "created_at": teacher.user.created_at,
             "consent_received": teacher.user.consent_received,
             "consent_received_at": teacher.user.consent_received_at,
-            "consent_document_version": teacher.user.consent_document_version,
         }
         if teacher.user
         else None,

@@ -1,8 +1,19 @@
 import axios from 'axios';
 
-const authApiBaseUrl = process.env.REACT_APP_API_BASE_URL || '/api';
+// Local development:
+// REACT_APP_API_BASE_URL=http://localhost:8000
+// REACT_APP_AUTH_API_BASE_URL=http://localhost:8000/api
+//
+// Server / reverse-proxy deployment:
+// REACT_APP_API_BASE_URL=
+// REACT_APP_AUTH_API_BASE_URL=/api
+const apiBaseUrl = process.env.REACT_APP_API_BASE_URL || '';
+const authApiBaseUrl =
+  process.env.REACT_APP_AUTH_API_BASE_URL || process.env.REACT_APP_API_BASE_URL || '/api';
 
-const api = axios.create();
+const api = axios.create({
+  baseURL: apiBaseUrl,
+});
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");

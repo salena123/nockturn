@@ -1,6 +1,5 @@
 import React from 'react';
 
-
 const StudentTable = ({
   students,
   onEdit,
@@ -12,6 +11,7 @@ const StudentTable = ({
   onOpenHistory,
   onOpenWaitlist,
   onExport,
+  onExportPdf,
 }) => {
   if (!students.length) {
     return <div>Ученики не найдены.</div>;
@@ -68,7 +68,10 @@ const StudentTable = ({
                 Лист ожидания
               </button>{' '}
               <button type="button" onClick={() => onExport(student)}>
-                Экспорт
+                Excel
+              </button>{' '}
+              <button type="button" onClick={() => onExportPdf(student)}>
+                PDF
               </button>{' '}
               <button type="button" onClick={() => onDelete(student)}>
                 Удалить
@@ -80,6 +83,5 @@ const StudentTable = ({
     </table>
   );
 };
-
 
 export default StudentTable;

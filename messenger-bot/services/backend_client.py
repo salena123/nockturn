@@ -82,3 +82,24 @@ class CRMBackendClient:
             )
             response.raise_for_status()
             return response.json()
+
+    async def report_vk_absence(
+        self,
+        *,
+        vk_user_id: int,
+        lesson_id: int,
+        reason: str,
+        comment: str | None = None,
+    ) -> dict:
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=20.0) as client:
+            response = await client.post(
+                f"/api/bot/vk/absence/{vk_user_id}",
+                json={
+                    "lesson_id": lesson_id,
+                    "reason": reason,
+                    "comment": comment,
+                },
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            return response.json()

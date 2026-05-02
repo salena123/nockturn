@@ -25,6 +25,6 @@ class Student(Base):
     first_contact_date = Column(Date)
     consent_received = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     consent_received_at = Column(DateTime)
-    consent_document_version = Column(String(100))
+    bot_mailing_consent = Column(Boolean, default=False, server_default=text("false"), nullable=False)
 
     parent = relationship("Parent", backref="students")

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 
+import api from '../api';
 import DeleteConfirm from '../components/DeleteConfirm';
 import UserForm from '../components/UserForm';
 import UserSuccessModal from '../components/UserSuccessModal';
 import UserTable from '../components/UserTable';
-import api from '../api';
 import { formatServerDate, formatServerDateTime } from '../utils/dateTime';
 
 
@@ -32,6 +32,13 @@ const ACTION_LABELS = {
   reset_password: 'Сброс пароля',
   block: 'Блокировка',
   unblock: 'Разблокировка',
+  restore: 'Восстановление',
+};
+
+const ARCHIVED_CONTEXT_LABELS = {
+  performed_action: 'Действия сотрудника',
+  account_history: 'История учетной записи',
+  document_history: 'История документов',
 };
 
 const FIELD_LABELS = {
@@ -45,19 +52,21 @@ const FIELD_LABELS = {
   password: 'Пароль',
   document_type: 'Тип документа',
   file_path: 'Файл',
+  consent_received: 'Согласие на обработку ПДн',
+  consent_received_at: 'Дата получения согласия',
   created_at: 'Дата создания',
   updated_at: 'Дата обновления',
+  archived_context: 'Раздел архива',
+  teacher_profile: 'Профиль преподавателя',
+  documents: 'Документы',
 };
 
 const getRoleLabel = (roleName) => ROLE_LABELS[roleName] || roleName || '—';
-
 const getDocumentTypeLabel = (documentType) =>
   DOCUMENT_TYPE_LABELS[documentType] || documentType || '—';
-
 const getActionLabel = (action) => ACTION_LABELS[action] || action || '—';
-
 const getFieldLabel = (fieldName) => FIELD_LABELS[fieldName] || fieldName || '—';
-
+const getArchivedContextLabel = (value) => ARCHIVED_CONTEXT_LABELS[value] || value || '—';
 const getActorLabel = (item) => item?.actor_user_name || 'Система';
 
 const getDocumentName = (filePath) => {
@@ -98,7 +107,13 @@ const formatHistoryValue = (value, fieldName, roles) => {
 
   const parsedValue = tryParseJson(value);
 
-  if (typeof parsedValue === 'object' && parsedValue !== null && !Array.isArray(parsedValue)) {
+  if (Array.isArray(parsedValue)) {
+    return parsedValue
+      .map((item) => formatHistoryValue(item, fieldName, roles))
+      .join('; ');
+  }
+
+  if (typeof parsedValue === 'object' && parsedValue !== null) {
     return Object.entries(parsedValue)
       .map(([key, nestedValue]) => `${getFieldLabel(key)}: ${formatHistoryValue(nestedValue, key, roles)}`)
       .join('; ');
@@ -118,12 +133,25 @@ const formatHistoryValue = (value, fieldName, roles) => {
     }
   }
 
+  if (fieldName === 'consent_received') {
+    if (parsedValue === true || parsedValue === 'true') {
+      return 'Да';
+    }
+    if (parsedValue === false || parsedValue === 'false') {
+      return 'Нет';
+    }
+  }
+
   if (fieldName === 'document_type') {
     return getDocumentTypeLabel(parsedValue);
   }
 
   if (fieldName === 'file_path') {
     return getDocumentName(String(parsedValue));
+  }
+
+  if (fieldName === 'archived_context') {
+    return getArchivedContextLabel(parsedValue);
   }
 
   if (fieldName === 'password') {
@@ -134,7 +162,7 @@ const formatHistoryValue = (value, fieldName, roles) => {
     return formatServerDate(parsedValue);
   }
 
-  if (fieldName === 'created_at' || fieldName === 'updated_at') {
+  if (fieldName === 'consent_received_at' || fieldName === 'created_at' || fieldName === 'updated_at') {
     return formatServerDateTime(parsedValue);
   }
 
@@ -145,6 +173,56 @@ const formatHistoryValue = (value, fieldName, roles) => {
   return String(parsedValue);
 };
 
+const renderKeyValueTable = (entries, roles) => (
+  <table border="1" cellPadding="6" cellSpacing="0">
+    <thead>
+      <tr>
+        <th>Поле</th>
+        <th>Значение</th>
+      </tr>
+    </thead>
+    <tbody>
+      {entries.map(([key, value]) => (
+        <tr key={key}>
+          <td>{getFieldLabel(key)}</td>
+          <td>{formatHistoryValue(value, key, roles)}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
+const renderHistoryTable = (items, roles, withContext = false) => (
+  <table border="1" cellPadding="6" cellSpacing="0">
+    <thead>
+      <tr>
+        <th>Дата</th>
+        <th>Кто изменил</th>
+        {withContext && <th>Раздел</th>}
+        <th>Действие</th>
+        <th>Поле</th>
+        <th>Было</th>
+        <th>Стало</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {items.map((item) => (
+        <tr key={`${item.id}-${item.created_at}`}>
+          <td>{formatServerDateTime(item.created_at)}</td>
+          <td>{getActorLabel(item)}</td>
+          {withContext && <td>{getArchivedContextLabel(item.archived_context)}</td>}
+          <td>{getActionLabel(item.action)}</td>
+          <td>{getFieldLabel(item.field_name)}</td>
+          <td>{formatHistoryValue(item.old_value, item.field_name, roles)}</td>
+          <td>{formatHistoryValue(item.new_value, item.field_name, roles)}</td>
+          <td>{item.ip_address || '—'}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
 const Users = ({ currentUser }) => {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -153,6 +231,7 @@ const Users = ({ currentUser }) => {
   const [error, setError] = useState('');
   const [editingUser, setEditingUser] = useState(null);
   const [deletingUser, setDeletingUser] = useState(null);
+  const [archiveDeletingUser, setArchiveDeletingUser] = useState(null);
   const [successModalOpen, setSuccessModalOpen] = useState(false);
   const [successUserData, setSuccessUserData] = useState(null);
   const [successPassword, setSuccessPassword] = useState(null);
@@ -166,7 +245,8 @@ const Users = ({ currentUser }) => {
   const [documentForm, setDocumentForm] = useState(EMPTY_DOCUMENT_FORM);
   const [documentFile, setDocumentFile] = useState(null);
   const [editingDocumentId, setEditingDocumentId] = useState(null);
-  const [archivePreviewUser, setArchivePreviewUser] = useState(null);
+  const [archivePreview, setArchivePreview] = useState(null);
+  const [userCard, setUserCard] = useState(null);
 
   const loadUsers = async () => {
     try {
@@ -195,6 +275,10 @@ const Users = ({ currentUser }) => {
     }
   };
 
+  const refreshAll = async () => {
+    await Promise.all([loadUsers(), loadRoles(), loadArchivedUsers()]);
+  };
+
   useEffect(() => {
     const loadAllData = async () => {
       setLoading(true);
@@ -212,7 +296,7 @@ const Users = ({ currentUser }) => {
       setHistoryUser(user);
       setHistoryItems(response.data);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Не удалось загрузить историю');
+      setError(err.response?.data?.detail || 'Не удалось загрузить историю сотрудника');
     }
   };
 
@@ -233,6 +317,24 @@ const Users = ({ currentUser }) => {
     }
   };
 
+  const loadUserCard = async (user) => {
+    try {
+      const response = await api.get(`/api/users/${user.id}/card`);
+      setUserCard(response.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось загрузить карточку сотрудника');
+    }
+  };
+
+  const loadArchivedUserDetail = async (archivedUser) => {
+    try {
+      const response = await api.get(`/api/archived-users/${archivedUser.id}`);
+      setArchivePreview(response.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось загрузить архивную карточку сотрудника');
+    }
+  };
+
   const refreshDocuments = async (userId) => {
     const [documentsResponse, historyResponse] = await Promise.all([
       api.get(`/api/users/${userId}/documents`),
@@ -240,10 +342,6 @@ const Users = ({ currentUser }) => {
     ]);
     setDocuments(documentsResponse.data);
     setDocumentHistory(historyResponse.data);
-  };
-
-  const refreshAll = async () => {
-    await Promise.all([loadUsers(), loadRoles(), loadArchivedUsers()]);
   };
 
   const handleUserCreated = async () => {
@@ -279,12 +377,29 @@ const Users = ({ currentUser }) => {
       setIsEditMode(false);
       setSuccessTitle('Сотрудник успешно восстановлен!');
       setSuccessModalOpen(true);
-      if (archivePreviewUser?.id === archivedUser.id) {
-        setArchivePreviewUser(null);
+      if (archivePreview?.archive?.id === archivedUser.id) {
+        setArchivePreview(null);
       }
       await refreshAll();
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось восстановить сотрудника из архива');
+    }
+  };
+
+  const handlePermanentArchiveDelete = async () => {
+    if (!archiveDeletingUser) {
+      return;
+    }
+
+    try {
+      await api.delete(`/api/archived-users/${archiveDeletingUser.id}`);
+      if (archivePreview?.archive?.id === archiveDeletingUser.id) {
+        setArchivePreview(null);
+      }
+      setArchiveDeletingUser(null);
+      await refreshAll();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось удалить архивную запись сотрудника');
     }
   };
 
@@ -297,6 +412,12 @@ const Users = ({ currentUser }) => {
       await refreshAll();
       if (historyUser?.id === user.id) {
         await loadUserHistory(user);
+      }
+      if (documentsUser?.id === user.id) {
+        await loadUserDocuments(user);
+      }
+      if (userCard?.user?.id === user.id) {
+        await loadUserCard(user);
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Ошибка изменения статуса сотрудника');
@@ -316,8 +437,8 @@ const Users = ({ currentUser }) => {
         setDocuments([]);
         setDocumentHistory([]);
       }
-      if (archivePreviewUser?.original_user_id === deletingUser.id) {
-        setArchivePreviewUser(null);
+      if (userCard?.user?.id === deletingUser.id) {
+        setUserCard(null);
       }
       await refreshAll();
     } catch (err) {
@@ -373,6 +494,9 @@ const Users = ({ currentUser }) => {
       setDocumentFile(null);
       setEditingDocumentId(null);
       await refreshDocuments(documentsUser.id);
+      if (userCard?.user?.id === documentsUser.id) {
+        await loadUserCard(documentsUser);
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось сохранить документ');
     }
@@ -386,6 +510,9 @@ const Users = ({ currentUser }) => {
     try {
       await api.delete(`/api/user-documents/${documentId}`);
       await refreshDocuments(documentsUser.id);
+      if (userCard?.user?.id === documentsUser.id) {
+        await loadUserCard(documentsUser);
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось удалить документ');
     }
@@ -415,10 +542,8 @@ const Users = ({ currentUser }) => {
     role_label: getRoleLabel(user.role),
   }));
 
-  const archiveSnapshot =
-    archivePreviewUser && typeof tryParseJson(archivePreviewUser.snapshot_json) === 'object'
-      ? tryParseJson(archivePreviewUser.snapshot_json)
-      : null;
+  const archiveSnapshot = archivePreview?.snapshot || null;
+  const archiveActions = archivePreview?.actions || [];
 
   return (
     <div>
@@ -445,6 +570,7 @@ const Users = ({ currentUser }) => {
       <UserTable
         users={usersForDisplay}
         currentUser={currentUser}
+        onOpenCard={loadUserCard}
         onEdit={setEditingUser}
         onDelete={setDeletingUser}
         onToggleBlock={handleToggleBlock}
@@ -453,36 +579,93 @@ const Users = ({ currentUser }) => {
         onExport={handleExportUser}
       />
 
+      {userCard && (
+        <div>
+          <h3>Карточка сотрудника: {userCard.user.full_name || userCard.user.login}</h3>
+          {renderKeyValueTable(
+            Object.entries({
+              id: userCard.user.id,
+              login: userCard.user.login,
+              full_name: userCard.user.full_name,
+              phone: userCard.user.phone,
+              role_id: userCard.user.role_id,
+              is_active: userCard.user.is_active,
+              hire_date: userCard.user.hire_date,
+              consent_received: userCard.user.consent_received,
+              consent_received_at: userCard.user.consent_received_at,
+              created_at: userCard.user.created_at,
+              updated_at: userCard.user.updated_at,
+            }),
+            roles,
+          )}
+
+          {userCard.teacher_profile && (
+            <div>
+              <h4>Профиль преподавателя</h4>
+              {renderKeyValueTable(Object.entries(userCard.teacher_profile), roles)}
+            </div>
+          )}
+
+          <h4>Документы сотрудника</h4>
+          {!userCard.documents.length ? (
+            <div>Документы пока не добавлены.</div>
+          ) : (
+            <table border="1" cellPadding="6" cellSpacing="0">
+              <thead>
+                <tr>
+                  <th>№</th>
+                  <th>Тип</th>
+                  <th>Файл</th>
+                  <th>Дата</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userCard.documents.map((document, index) => (
+                  <tr key={document.id}>
+                    <td>{index + 1}</td>
+                    <td>{getDocumentTypeLabel(document.document_type)}</td>
+                    <td>{getDocumentName(document.file_path)}</td>
+                    <td>{formatServerDateTime(document.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <h4>История учетной записи</h4>
+          {!userCard.history.length ? (
+            <div>История изменений пока пуста.</div>
+          ) : (
+            renderHistoryTable(userCard.history, roles)
+          )}
+
+          <h4>История документов</h4>
+          {!userCard.document_history.length ? (
+            <div>История документов пока пуста.</div>
+          ) : (
+            renderHistoryTable(userCard.document_history, roles)
+          )}
+
+          <h4>Действия сотрудника по системе</h4>
+          {!userCard.activity.length ? (
+            <div>Действия сотрудника пока не зафиксированы.</div>
+          ) : (
+            renderHistoryTable(userCard.activity, roles)
+          )}
+
+          <button type="button" onClick={() => setUserCard(null)}>
+            Закрыть карточку
+          </button>
+        </div>
+      )}
+
       {historyUser && (
         <div>
           <h3>История сотрудника: {historyUser.full_name || historyUser.login}</h3>
           {!historyItems.length ? (
             <div>История изменений пока пуста.</div>
           ) : (
-            <table border="1" cellPadding="6" cellSpacing="0">
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Кто изменил</th>
-                  <th>Действие</th>
-                  <th>Поле</th>
-                  <th>Было</th>
-                  <th>Стало</th>
-                </tr>
-              </thead>
-              <tbody>
-                {historyItems.map((item) => (
-                  <tr key={item.id}>
-                    <td>{formatServerDateTime(item.created_at)}</td>
-                    <td>{getActorLabel(item)}</td>
-                    <td>{getActionLabel(item.action)}</td>
-                    <td>{getFieldLabel(item.field_name)}</td>
-                    <td>{formatHistoryValue(item.old_value, item.field_name, roles)}</td>
-                    <td>{formatHistoryValue(item.new_value, item.field_name, roles)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            renderHistoryTable(historyItems, roles)
           )}
           <button type="button" onClick={() => setHistoryUser(null)}>
             Закрыть историю
@@ -594,30 +777,7 @@ const Users = ({ currentUser }) => {
           {!documentHistory.length ? (
             <div>История документов пока пуста.</div>
           ) : (
-            <table border="1" cellPadding="6" cellSpacing="0">
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Кто изменил</th>
-                  <th>Действие</th>
-                  <th>Поле</th>
-                  <th>Было</th>
-                  <th>Стало</th>
-                </tr>
-              </thead>
-              <tbody>
-                {documentHistory.map((item) => (
-                  <tr key={item.id}>
-                    <td>{formatServerDateTime(item.created_at)}</td>
-                    <td>{getActorLabel(item)}</td>
-                    <td>{getActionLabel(item.action)}</td>
-                    <td>{getFieldLabel(item.field_name)}</td>
-                    <td>{formatHistoryValue(item.old_value, item.field_name, roles)}</td>
-                    <td>{formatHistoryValue(item.new_value, item.field_name, roles)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            renderHistoryTable(documentHistory, roles)
           )}
 
           <button type="button" onClick={() => setDocumentsUser(null)}>
@@ -635,7 +795,6 @@ const Users = ({ currentUser }) => {
             <thead>
               <tr>
                 <th>№</th>
-  
                 <th>Логин</th>
                 <th>ФИО</th>
                 <th>Роль</th>
@@ -643,8 +802,7 @@ const Users = ({ currentUser }) => {
                 <th>Дата начала работы</th>
                 <th>Кто архивировал</th>
                 <th>Дата архивации</th>
-                <th>Восстановление</th>
-                <th>Детали</th>
+                <th>Действия</th>
               </tr>
             </thead>
             <tbody>
@@ -661,11 +819,12 @@ const Users = ({ currentUser }) => {
                   <td>
                     <button type="button" onClick={() => handleRestoreArchivedUser(user)}>
                       Восстановить
-                    </button>
-                  </td>
-                  <td>
-                    <button type="button" onClick={() => setArchivePreviewUser(user)}>
+                    </button>{' '}
+                    <button type="button" onClick={() => loadArchivedUserDetail(user)}>
                       Просмотреть
+                    </button>{' '}
+                    <button type="button" onClick={() => setArchiveDeletingUser(user)}>
+                      Удалить навсегда
                     </button>
                   </td>
                 </tr>
@@ -675,30 +834,27 @@ const Users = ({ currentUser }) => {
         )}
       </div>
 
-      {archivePreviewUser && (
+      {archivePreview && (
         <div>
-          <h3>Архивная карточка сотрудника: {archivePreviewUser.full_name || archivePreviewUser.login}</h3>
+          <h3>
+            Архивная карточка сотрудника:{' '}
+            {archivePreview.archive.full_name || archivePreview.archive.login}
+          </h3>
+
           {!archiveSnapshot ? (
             <div>Снимок данных недоступен.</div>
           ) : (
-            <table border="1" cellPadding="6" cellSpacing="0">
-              <thead>
-                <tr>
-                  <th>Поле</th>
-                  <th>Значение</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(archiveSnapshot).map(([key, value]) => (
-                  <tr key={key}>
-                    <td>{getFieldLabel(key)}</td>
-                    <td>{formatHistoryValue(value, key, roles)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            renderKeyValueTable(Object.entries(archiveSnapshot), roles)
           )}
-          <button type="button" onClick={() => setArchivePreviewUser(null)}>
+
+          <h4>Архив действий сотрудника</h4>
+          {!archiveActions.length ? (
+            <div>Архив действий пока пуст.</div>
+          ) : (
+            renderHistoryTable(archiveActions, roles, true)
+          )}
+
+          <button type="button" onClick={() => setArchivePreview(null)}>
             Закрыть архивную карточку
           </button>
         </div>
@@ -710,6 +866,23 @@ const Users = ({ currentUser }) => {
           itemType="user"
           onConfirm={handleDelete}
           onCancel={() => setDeletingUser(null)}
+        />
+      )}
+
+      {archiveDeletingUser && (
+        <DeleteConfirm
+          item={archiveDeletingUser}
+          itemType="user"
+          title="Безвозвратное удаление из архива"
+          message={
+            <>
+              Вы уверены, что хотите безвозвратно удалить архивную запись сотрудника{' '}
+              <strong>{archiveDeletingUser.login}</strong> вместе с архивом его действий?
+            </>
+          }
+          confirmLabel="Да, удалить навсегда"
+          onConfirm={handlePermanentArchiveDelete}
+          onCancel={() => setArchiveDeletingUser(null)}
         />
       )}
 

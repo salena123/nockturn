@@ -66,13 +66,15 @@ const FIELD_LABELS = {
   parent_id: 'Ответственное лицо',
   parent_name: 'ФИО ответственного лица',
   parent_phone: 'Телефон ответственного лица',
-  parent_telegram_id: 'Telegram ID ответственного лица',
   address: 'Адрес проживания',
   level: 'Уровень подготовки',
   status: 'Статус',
   comment: 'Комментарий',
   first_contact_date: 'Дата первого обращения',
   birth_date: 'Дата рождения',
+  consent_received: 'Согласие на обработку ПДн',
+  consent_received_at: 'Дата получения согласия',
+  bot_mailing_consent: 'Согласие на рассылку из бота',
   student_id: 'Ученик',
   teacher_id: 'Преподаватель',
   discipline_id: 'Дисциплина',
@@ -235,6 +237,15 @@ const Students = ({ currentUser }) => {
       }
     }
 
+    if (fieldName === 'consent_received' || fieldName === 'bot_mailing_consent') {
+      if (parsedValue === true || parsedValue === 'true') {
+        return 'Да';
+      }
+      if (parsedValue === false || parsedValue === 'false') {
+        return 'Нет';
+      }
+    }
+
     if (fieldName === 'teacher_id') {
       return getTeacherName(parsedValue);
     }
@@ -247,7 +258,11 @@ const Students = ({ currentUser }) => {
       return currentStudentName || getStudentName(parsedValue);
     }
 
-    if (fieldName === 'birth_date' || fieldName === 'first_contact_date') {
+    if (
+      fieldName === 'birth_date' ||
+      fieldName === 'first_contact_date' ||
+      fieldName === 'consent_received_at'
+    ) {
       return formatServerDate(parsedValue);
     }
 
@@ -384,6 +399,17 @@ const Students = ({ currentUser }) => {
       downloadBlob(response.data, `student_${student.id}.xlsx`);
     } catch (err) {
       setError(err.response?.data?.detail || 'Не удалось выгрузить карточку ученика');
+    }
+  };
+
+  const handleExportStudentPdf = async (student) => {
+    try {
+      const response = await api.get(`/api/students/${student.id}/export/pdf`, {
+        responseType: 'blob',
+      });
+      downloadBlob(response.data, `student_${student.id}.pdf`);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Не удалось выгрузить PDF-карточку ученика');
     }
   };
 
@@ -767,6 +793,7 @@ const Students = ({ currentUser }) => {
         onOpenHistory={handleOpenHistory}
         onOpenWaitlist={handleOpenWaitlist}
         onExport={handleExportStudent}
+        onExportPdf={handleExportStudentPdf}
       />
 
       {allWaitlistOpen && (
@@ -843,6 +870,9 @@ const Students = ({ currentUser }) => {
               <tr><td>Ответственное лицо</td><td>{viewingStudent.parent_name || '—'}</td></tr>
               <tr><td>Телефон ответственного лица</td><td>{viewingStudent.parent?.phone || '—'}</td></tr>
               <tr><td>Дата первого обращения</td><td>{formatServerDate(viewingStudent.first_contact_date)}</td></tr>
+              <tr><td>Согласие на обработку ПДн</td><td>{viewingStudent.consent_received ? 'Да' : 'Нет'}</td></tr>
+              <tr><td>Дата получения согласия</td><td>{formatServerDate(viewingStudent.consent_received_at)}</td></tr>
+              <tr><td>Согласие на рассылку из бота</td><td>{viewingStudent.bot_mailing_consent ? 'Да' : 'Нет'}</td></tr>
               <tr><td>Комментарий</td><td>{viewingStudent.comment || 'Комментарий не указан'}</td></tr>
             </tbody>
           </table>

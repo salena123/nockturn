@@ -11,7 +11,6 @@ const EMPTY_FORM = {
   has_parent: false,
   parent_name: '',
   parent_phone: '',
-  parent_telegram_id: '',
   address: '',
   level: '',
   status: 'потенциальный',
@@ -20,7 +19,7 @@ const EMPTY_FORM = {
   birth_date: '',
   consent_received: false,
   consent_received_at: '',
-  consent_document_version: '',
+  bot_mailing_consent: false,
 };
 
 const LEVEL_OPTIONS = [
@@ -60,7 +59,6 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
         has_parent: Boolean(student.has_parent),
         parent_name: student.parent_name || '',
         parent_phone: student.parent?.phone || '',
-        parent_telegram_id: student.parent?.telegram_id ? String(student.parent.telegram_id) : '',
         address: student.address || '',
         level: student.level || '',
         status: normalizeStudentStatus(student.status),
@@ -69,7 +67,7 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
         birth_date: student.birth_date || '',
         consent_received: student.consent_received ?? false,
         consent_received_at: student.consent_received_at ? String(student.consent_received_at).slice(0, 16) : '',
-        consent_document_version: student.consent_document_version || '',
+        bot_mailing_consent: student.bot_mailing_consent ?? false,
       });
       setError('');
       setStatusWarning(null);
@@ -101,10 +99,6 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
         has_parent: formData.has_parent,
         parent_name: formData.has_parent ? formData.parent_name || null : null,
         parent_phone: formData.has_parent ? formData.parent_phone || null : null,
-        parent_telegram_id:
-          formData.has_parent && formData.parent_telegram_id
-            ? Number(formData.parent_telegram_id)
-            : null,
         address: formData.address || null,
         level: formData.level || null,
         status: formData.status || null,
@@ -113,7 +107,7 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
         birth_date: formData.birth_date || null,
         consent_received: formData.consent_received,
         consent_received_at: formData.consent_received_at || null,
-        consent_document_version: formData.consent_document_version || null,
+        bot_mailing_consent: formData.bot_mailing_consent,
       };
 
       const isAdminLike = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
@@ -310,14 +304,13 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
 
         <div>
           <label>
-            Версия документа согласия
-            <br />
             <input
-              type="text"
-              name="consent_document_version"
-              value={formData.consent_document_version}
+              type="checkbox"
+              name="bot_mailing_consent"
+              checked={formData.bot_mailing_consent}
               onChange={handleChange}
             />
+            {' '}Согласен на рассылку из бота
           </label>
         </div>
 
@@ -354,19 +347,6 @@ const StudentForm = ({ student, onSave, onCancel, currentUser }) => {
                 Телефон ответственного лица
                 <br />
                 <input type="text" name="parent_phone" value={formData.parent_phone} onChange={handleChange} />
-              </label>
-            </div>
-
-            <div>
-              <label>
-                ВК ID ответственного лица
-                <br />
-                <input
-                  type="number"
-                  name="parent_telegram_id"
-                  value={formData.parent_telegram_id}
-                  onChange={handleChange}
-                />
               </label>
             </div>
           </>

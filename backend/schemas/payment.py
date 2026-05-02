@@ -33,6 +33,7 @@ class PaymentResponse(BaseModel):
     paid_at: Optional[datetime] = None
     comment: Optional[str] = None
     status: Optional[str] = None
+    subscription_balance_snapshot: Optional[int] = None
 
     class Config:
         from_attributes = True

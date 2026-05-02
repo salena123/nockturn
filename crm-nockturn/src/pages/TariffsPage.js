@@ -1,6 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from '../api';
 import DeleteConfirm from '../components/DeleteConfirm';
+
+
+const EMPTY_FORM = {
+  name: '',
+  type: 'individual',
+  lessons_per_week: 1,
+  price_per_lesson: '',
+  duration_months: 1,
+};
+
+
+const formatTariffType = (value) => (value === 'group' ? 'Групповой' : 'Индивидуальный');
+
 
 const TariffsPage = () => {
   const [tariffs, setTariffs] = useState([]);
@@ -8,42 +21,62 @@ const TariffsPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingTariff, setEditingTariff] = useState(null);
   const [deletingTariff, setDeletingTariff] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    type: 'individual',
-    lessons_per_week: 1,
-    price_per_lesson: '',
-    duration_months: 1
-  });
-
-  useEffect(() => {
-    fetchTariffs();
-  }, []);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [error, setError] = useState('');
 
   const fetchTariffs = async () => {
     try {
       const response = await api.get('/api/tariffs');
       setTariffs(response.data);
-    } catch (error) {
-      console.error('Error loading tariffs:', error);
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось загрузить тарифы');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    fetchTariffs();
+  }, []);
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: ['lessons_per_week', 'duration_months'].includes(name)
+        ? Number(value)
+        : name === 'price_per_lesson'
+          ? value
+          : value,
+    }));
+  };
+
+  const resetForm = () => {
+    setFormData(EMPTY_FORM);
+    setEditingTariff(null);
+    setShowForm(false);
+    setError('');
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError('');
+
+    const payload = {
+      ...formData,
+      price_per_lesson: Number(formData.price_per_lesson),
+    };
+
     try {
       if (editingTariff) {
-        await api.put(`/api/tariffs/${editingTariff.id}`, formData);
+        await api.put(`/api/tariffs/${editingTariff.id}`, payload);
       } else {
-        await api.post('/api/tariffs', formData);
+        await api.post('/api/tariffs', payload);
       }
-      
-      fetchTariffs();
+      await fetchTariffs();
       resetForm();
-    } catch (error) {
-      console.error('Ошибка сохранения тарифа:', error);
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось сохранить тариф');
     }
   };
 
@@ -53,32 +86,21 @@ const TariffsPage = () => {
       name: tariff.name,
       type: tariff.type,
       lessons_per_week: tariff.lessons_per_week,
-      price_per_lesson: tariff.price_per_lesson,
-      duration_months: tariff.duration_months
+      price_per_lesson: String(tariff.price_per_lesson ?? ''),
+      duration_months: tariff.duration_months,
     });
     setShowForm(true);
+    setError('');
   };
 
   const handleDelete = async (tariffId) => {
     try {
       await api.delete(`/api/tariffs/${tariffId}`);
       setDeletingTariff(null);
-      fetchTariffs();
-    } catch (error) {
-      console.error('Ошибка удаления тарифа', error);
+      await fetchTariffs();
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'Не удалось удалить тариф');
     }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      type: 'individual',
-      lessons_per_week: 1,
-      price_per_lesson: '',
-      duration_months: 1
-    });
-    setEditingTariff(null);
-    setShowForm(false);
   };
 
   if (loading) {
@@ -88,8 +110,10 @@ const TariffsPage = () => {
   return (
     <div>
       <h2>Тарифы</h2>
-      
-      <button onClick={() => setShowForm(true)}>
+
+      {error && <div>{error}</div>}
+
+      <button type="button" onClick={() => setShowForm(true)}>
         Добавить тариф
       </button>
 
@@ -98,61 +122,70 @@ const TariffsPage = () => {
           <h3>{editingTariff ? 'Редактировать тариф' : 'Новый тариф'}</h3>
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: '10px' }}>
-              <label>Название:</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-                required
-              />
+              <label>
+                Название:
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                />
+              </label>
             </div>
 
             <div style={{ marginBottom: '10px' }}>
-              <label>Тип:</label>
-              <select
-                value={formData.type}
-                onChange={(e) => setFormData({...formData, type: e.target.value})}
-              >
-                <option value="individual">Индивидуальный</option>
-                <option value="group">Групповой</option>
-              </select>
+              <label>
+                Вид занятий:
+                <select name="type" value={formData.type} onChange={handleChange}>
+                  <option value="individual">Индивидуальные</option>
+                  <option value="group">Групповые</option>
+                </select>
+              </label>
             </div>
 
             <div style={{ marginBottom: '10px' }}>
-              <label>Занятий в неделю:</label>
-              <select
-                value={formData.lessons_per_week}
-                onChange={(e) => setFormData({...formData, lessons_per_week: parseInt(e.target.value)})}
-              >
-                <option value={1}>1</option>
-                <option value={2}>2</option>
-              </select>
+              <label>
+                Количество занятий в неделю:
+                <select name="lessons_per_week" value={formData.lessons_per_week} onChange={handleChange}>
+                  <option value={1}>1</option>
+                  <option value={2}>2</option>
+                </select>
+              </label>
             </div>
 
             <div style={{ marginBottom: '10px' }}>
-              <label>Цена за занятие:</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.price_per_lesson}
-                onChange={(e) => setFormData({...formData, price_per_lesson: parseFloat(e.target.value)})}
-                required
-              />
+              <label>
+                Стоимость одного занятия:
+                <input
+                  type="number"
+                  name="price_per_lesson"
+                  step="0.01"
+                  min="0"
+                  value={formData.price_per_lesson}
+                  onChange={handleChange}
+                  required
+                />
+              </label>
             </div>
 
             <div style={{ marginBottom: '10px' }}>
-              <label>Длительность (месяцев):</label>
-              <input
-                type="number"
-                value={formData.duration_months}
-                onChange={(e) => setFormData({...formData, duration_months: parseInt(e.target.value)})}
-                min="1"
-              />
+              <label>
+                Срок действия (месяцев):
+                <input
+                  type="number"
+                  name="duration_months"
+                  min="1"
+                  value={formData.duration_months}
+                  onChange={handleChange}
+                  required
+                />
+              </label>
             </div>
 
             <button type="submit">
               {editingTariff ? 'Сохранить' : 'Создать'}
-            </button>
+            </button>{' '}
             <button type="button" onClick={resetForm}>
               Отмена
             </button>
@@ -166,35 +199,40 @@ const TariffsPage = () => {
           <thead>
             <tr>
               <th>Название</th>
-              <th>Тип</th>
+              <th>Вид занятий</th>
               <th>Занятий в неделю</th>
               <th>Цена за занятие</th>
-              <th>Длительность</th>
+              <th>Срок действия</th>
               <th>Всего занятий</th>
               <th>Итоговая цена</th>
               <th>Действия</th>
             </tr>
           </thead>
           <tbody>
-            {tariffs.map(tariff => (
-              <tr key={tariff.id}>
-                <td>{tariff.name}</td>
-                <td>{tariff.type === 'individual' ? 'индивидуальный' : 'групповой'}</td>
-                <td>{tariff.lessons_per_week}</td>
-                <td>{tariff.price_per_lesson}</td>
-                <td>{tariff.duration_months} months</td>
-                <td>{Math.floor(tariff.duration_months * 4 * tariff.lessons_per_week)}</td>
-                <td>{(Math.floor(tariff.duration_months * 4 * tariff.lessons_per_week) * tariff.price_per_lesson).toFixed(2)}</td>
-                <td>
-                  <button onClick={() => handleEdit(tariff)}>
-                    Редактировать
-                  </button>
-                  <button onClick={() => setDeletingTariff(tariff)}>
-                    Удалить
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {tariffs.map((tariff) => {
+              const lessonsTotal = Math.floor(tariff.duration_months * 4 * tariff.lessons_per_week);
+              const totalPrice = lessonsTotal * Number(tariff.price_per_lesson || 0);
+
+              return (
+                <tr key={tariff.id}>
+                  <td>{tariff.name}</td>
+                  <td>{formatTariffType(tariff.type)}</td>
+                  <td>{tariff.lessons_per_week}</td>
+                  <td>{tariff.price_per_lesson}</td>
+                  <td>{tariff.duration_months} мес.</td>
+                  <td>{lessonsTotal}</td>
+                  <td>{totalPrice.toFixed(2)}</td>
+                  <td>
+                    <button type="button" onClick={() => handleEdit(tariff)}>
+                      Редактировать
+                    </button>{' '}
+                    <button type="button" onClick={() => setDeletingTariff(tariff)}>
+                      Удалить
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -210,5 +248,6 @@ const TariffsPage = () => {
     </div>
   );
 };
+
 
 export default TariffsPage;

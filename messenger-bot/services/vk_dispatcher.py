@@ -11,6 +11,14 @@ from services.vk_api import VKApiClient
 from state import session_store
 
 
+ABSENCE_REASON_OPTIONS = [
+    "Болезнь",
+    "Семейные обстоятельства",
+    "Учеба / школа",
+    "Другая уважительная причина",
+]
+
+
 def build_keyboard_json() -> str:
     return json.dumps(build_main_menu(), ensure_ascii=False)
 
@@ -44,6 +52,38 @@ def format_schedule_message(data: dict) -> str:
         )
 
     return "\n".join(lines)
+
+
+def format_absence_lessons_message(schedule: dict) -> str:
+    items = schedule.get("items") or []
+    if not items:
+        return "Ближайших занятий для сообщения о пропуске нет."
+
+    lines = [
+        "Выберите занятие, о пропуске которого хотите сообщить. Ответьте номером варианта:",
+    ]
+    for index, item in enumerate(items[:5], start=1):
+        start_time = str(item.get("start_time") or "").replace("T", " ")[:16]
+        teacher_name = item.get("teacher_name") or "Преподаватель не указан"
+        discipline_name = item.get("discipline_name") or "Дисциплина не указана"
+        lines.append(f"{index}. {start_time} — {discipline_name}, {teacher_name}")
+    return "\n".join(lines)
+
+
+def format_absence_reason_message() -> str:
+    lines = [
+        "Укажите причину пропуска. Ответьте номером варианта:",
+    ]
+    for index, reason in enumerate(ABSENCE_REASON_OPTIONS, start=1):
+        lines.append(f"{index}. {reason}")
+    return "\n".join(lines)
+
+
+def normalize_optional_comment(text: str) -> str | None:
+    normalized = (text or "").strip()
+    if not normalized or normalized in {"-", "нет", "без комментария"}:
+        return None
+    return normalized
 
 
 async def send_main_menu(vk_client: VKApiClient, user_id: int, message: str) -> None:
@@ -112,7 +152,11 @@ async def handle_unlinked_user(
         )
         options = ["По вашему номеру найдено несколько учеников. Ответьте номером нужного варианта:"]
         for index, match in enumerate(matches, start=1):
-            parent_part = f", ответственное лицо: {match.get('parent_name')}" if match.get("parent_name") else ""
+            parent_part = (
+                f", ответственное лицо: {match.get('parent_name')}"
+                if match.get("parent_name")
+                else ""
+            )
             options.append(f"{index}. {match['fio']}{parent_part}")
         await vk_client.send_message(user_id, "\n".join(options), keyboard=build_keyboard_json())
         return True
@@ -159,13 +203,125 @@ async def handle_unlinked_user(
     return True
 
 
+async def handle_absence_flow(
+    vk_client: VKApiClient,
+    backend_client: CRMBackendClient,
+    user_id: int,
+    text: str,
+) -> bool:
+    session = session_store.get(user_id) or {}
+    state = session.get("state")
+
+    if state == "awaiting_absence_lesson":
+        if not text.isdigit():
+            await vk_client.send_message(
+                user_id,
+                "Отправьте номер занятия из списка.",
+                keyboard=build_keyboard_json(),
+            )
+            return True
+
+        items = session.get("items") or []
+        index = int(text) - 1
+        if index < 0 or index >= len(items):
+            await vk_client.send_message(
+                user_id,
+                "Такого занятия нет. Попробуйте еще раз.",
+                keyboard=build_keyboard_json(),
+            )
+            return True
+
+        selected_item = items[index]
+        session_store.set(
+            user_id,
+            {
+                "state": "awaiting_absence_reason",
+                "selected_lesson": selected_item,
+            },
+        )
+        await vk_client.send_message(
+            user_id,
+            format_absence_reason_message(),
+            keyboard=build_keyboard_json(),
+        )
+        return True
+
+    if state == "awaiting_absence_reason":
+        if not text.isdigit():
+            await vk_client.send_message(
+                user_id,
+                "Отправьте номер причины пропуска.",
+                keyboard=build_keyboard_json(),
+            )
+            return True
+
+        index = int(text) - 1
+        if index < 0 or index >= len(ABSENCE_REASON_OPTIONS):
+            await vk_client.send_message(
+                user_id,
+                "Такой причины нет. Попробуйте еще раз.",
+                keyboard=build_keyboard_json(),
+            )
+            return True
+
+        session_store.set(
+            user_id,
+            {
+                "state": "awaiting_absence_comment",
+                "selected_lesson": session.get("selected_lesson"),
+                "reason": ABSENCE_REASON_OPTIONS[index],
+            },
+        )
+        await vk_client.send_message(
+            user_id,
+            "Если хотите, добавьте комментарий к пропуску. Если комментарий не нужен, отправьте '-'",
+            keyboard=build_keyboard_json(),
+        )
+        return True
+
+    if state == "awaiting_absence_comment":
+        selected_lesson = session.get("selected_lesson") or {}
+        reason = session.get("reason")
+        if not selected_lesson or not reason:
+            session_store.clear(user_id)
+            await send_main_menu(
+                vk_client,
+                user_id,
+                "Сценарий пропуска был сброшен. Попробуйте снова через кнопку «Сообщить о пропуске».",
+            )
+            return True
+
+        try:
+            response = await backend_client.report_vk_absence(
+                vk_user_id=user_id,
+                lesson_id=selected_lesson["lesson_id"],
+                reason=reason,
+                comment=normalize_optional_comment(text),
+            )
+        except httpx.HTTPStatusError as error:
+            detail = error.response.json().get("detail", "Не удалось сохранить пропуск.")
+            session_store.clear(user_id)
+            await send_main_menu(vk_client, user_id, detail)
+            return True
+
+        session_store.clear(user_id)
+        await send_main_menu(vk_client, user_id, response.get("message") or "Пропуск сохранен.")
+        return True
+
+    return False
+
+
 async def handle_linked_user(
     vk_client: VKApiClient,
     backend_client: CRMBackendClient,
     user_id: int,
     text: str,
 ) -> None:
+    if await handle_absence_flow(vk_client, backend_client, user_id, text):
+        return
+
     if text.lower() == "/start":
+        session_store.clear(user_id)
         await send_main_menu(
             vk_client,
             user_id,
@@ -184,17 +340,34 @@ async def handle_linked_user(
         return
 
     if text == "Сообщить о пропуске":
-        await send_main_menu(
-            vk_client,
+        schedule = await backend_client.get_vk_schedule(user_id)
+        items = (schedule.get("items") or [])[:5]
+        if not items:
+            await send_main_menu(
+                vk_client,
+                user_id,
+                "Ближайших занятий для сообщения о пропуске нет.",
+            )
+            return
+
+        session_store.set(
             user_id,
-            "Сценарий сообщения о пропуске будет следующим шагом. Основа привязки уже готова.",
+            {
+                "state": "awaiting_absence_lesson",
+                "items": items,
+            },
+        )
+        await vk_client.send_message(
+            user_id,
+            format_absence_lessons_message(schedule),
+            keyboard=build_keyboard_json(),
         )
         return
 
     await send_main_menu(
         vk_client,
         user_id,
-        "Команда пока в разработке. Уже скоро здесь появятся документы, пропуски и настройки уведомлений.",
+        "Команда пока в разработке. Уже скоро здесь появятся документы и дополнительные настройки уведомлений.",
     )
 
 
